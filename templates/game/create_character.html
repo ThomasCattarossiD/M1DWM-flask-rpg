@@ -1,0 +1,30 @@
+{% extends "base.html" %} {% block content %}
+<div class="character-creation">
+  <h2>Création de Personnage</h2>
+  <form method="POST">
+    <div class="form-group">
+      <label>Nom du personnage</label>
+      <input type="text" name="name" required />
+    </div>
+
+    <div class="form-group">
+      <label>Race</label>
+      <select name="race" required>
+        <option value="human">Humain</option>
+        <option value="vampire">Vampire</option>
+        <option value="werewolf">Loup-Garou</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Classe</label>
+      <select name="class" required>
+        <option value="warrior">Guerrier</option>
+        <option value="mage">Mage</option>
+      </select>
+    </div>
+
+    <button type="submit">Créer le personnage</button>
+  </form>
+</div>
+{% endblock %}

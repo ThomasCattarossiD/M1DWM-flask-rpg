@@ -1,0 +1,47 @@
+{% extends "base.html" %} {% block content %}
+<div class="board-game">
+  <h2>Mode Plateau</h2>
+
+  <div class="character-info">
+    <h3>{{ character.name }}</h3>
+    <p>Points de vie: {{ character.health }}</p>
+  </div>
+
+  <div class="game-board">
+    <!-- Le plateau sera généré dynamiquement via JavaScript -->
+  </div>
+
+  <div class="game-controls">
+    <button onclick="rollDice()">Lancer le dé</button>
+    <p id="dice-result"></p>
+  </div>
+</div>
+
+<script>
+  function createBoard() {
+    const board = document.querySelector(".game-board");
+    for (let i = 0; i < 20; i++) {
+      const cell = document.createElement("div");
+      cell.className = "board-cell";
+      cell.dataset.position = i;
+
+      // Assigner aléatoirement des types de cases
+      const cellTypes = ["item", "monster", "heal", "trap"];
+      const randomType =
+        cellTypes[Math.floor(Math.random() * cellTypes.length)];
+      cell.dataset.type = randomType;
+
+      board.appendChild(cell);
+    }
+  }
+
+  function rollDice() {
+    const result = Math.floor(Math.random() * 6) + 1;
+    document.getElementById("dice-result").textContent = `Résultat: ${result}`;
+    movePlayer(result);
+  }
+
+  // Initialiser le plateau
+  createBoard();
+</script>
+{% endblock %}

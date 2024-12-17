@@ -1,0 +1,106 @@
+{% extends "base.html" %} {% block content %}
+<div class="inventory-container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Inventaire de {{ character_name }}</h2>
+    <a href="{{ url_for('add_item') }}" class="btn btn-success"
+      >Ajouter un objet</a
+    >
+  </div>
+
+  {% if items %}
+  <div class="card">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>
+                <a
+                  href="{{ url_for('inventory', sort_by='item_name', order='asc' if sort_by != 'item_name' or order == 'desc' else 'desc') }}"
+                >
+                  Nom {% if sort_by == 'item_name' %}
+                  <i
+                    class="fas fa-sort-{{ 'down' if order == 'asc' else 'up' }}"
+                  ></i>
+                  {% endif %}
+                </a>
+              </th>
+              <th>
+                <a
+                  href="{{ url_for('inventory', sort_by='item_type', order='asc' if sort_by != 'item_type' or order == 'desc' else 'desc') }}"
+                >
+                  Type {% if sort_by == 'item_type' %}
+                  <i
+                    class="fas fa-sort-{{ 'down' if order == 'asc' else 'up' }}"
+                  ></i>
+                  {% endif %}
+                </a>
+              </th>
+              <th>
+                <a
+                  href="{{ url_for('inventory', sort_by='item_quantity', order='asc' if sort_by != 'item_quantity' or order == 'desc' else 'desc') }}"
+                >
+                  Quantité {% if sort_by == 'item_quantity' %}
+                  <i
+                    class="fas fa-sort-{{ 'down' if order == 'asc' else 'up' }}"
+                  ></i>
+                  {% endif %}
+                </a>
+              </th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.item_name }}</td>
+              <td>{{ item.item_type }}</td>
+              <td>{{ item.item_quantity }}</td>
+              <td>
+                <div class="btn-group">
+                  {% if item.item_type in ['potion', 'plante'] %}
+                  <form
+                    action="{{ url_for('consume_item', item_id=item.item_id) }}"
+                    method="POST"
+                    class="d-inline"
+                  >
+                    <button type="submit" class="btn btn-sm btn-success">
+                      Consommer
+                    </button>
+                  </form>
+                  {% endif %}
+                  <a
+                    href="{{ url_for('edit_item', item_id=item.item_id) }}"
+                    class="btn btn-sm btn-primary"
+                    >Modifier</a
+                  >
+                  <form
+                    action="{{ url_for('delete_item', item_id=item.item_id) }}"
+                    method="POST"
+                    class="d-inline"
+                  >
+                    <button
+                      type="submit"
+                      class="btn btn-sm btn-danger"
+                      onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet objet ?')"
+                    >
+                      Supprimer
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    L'inventaire de ce personnage est vide.
+    <a href="{{ url_for('add_item') }}">Ajoutez votre premier objet !</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

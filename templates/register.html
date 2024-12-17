@@ -1,0 +1,58 @@
+{% extends "base.html" %} {% block content %}
+<div class="auth-container">
+  <div class="card">
+    <div class="card-body">
+      <h2 class="card-title text-center mb-4">Inscription</h2>
+      <form method="POST">
+        <div class="form-group mb-3">
+          <label for="username">Nom d'utilisateur</label>
+          <input
+            type="text"
+            class="form-control"
+            id="username"
+            name="username"
+            required
+          />
+        </div>
+        <div class="form-group mb-3">
+          <label for="email">Email</label>
+          <input
+            type="email"
+            class="form-control"
+            id="email"
+            name="email"
+            required
+          />
+        </div>
+        <div class="form-group mb-3">
+          <label for="password">Mot de passe</label>
+          <input
+            type="password"
+            class="form-control"
+            id="password"
+            name="password"
+            required
+          />
+        </div>
+        <div class="form-group mb-3">
+          <label for="recheck_password">Confirmer le mot de passe</label>
+          <input
+            type="password"
+            class="form-control"
+            id="recheck_password"
+            name="recheck_password"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary w-100">S'inscrire</button>
+      </form>
+      <div class="text-center mt-3">
+        <p>
+          Déjà un compte ?
+          <a href="{{ url_for('login') }}">Se connecter</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

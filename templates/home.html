@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-white">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accueil</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="h-full bg-gray-100 flex flex-col items-center justify-center min-h-screen">
+    <div class="flex min-h-full flex-col justify-center px-6 py-12 lg:px-8">
+        <div class="space-y-6 sm:mx-auto sm:w-full sm:max-w-sm">
+            {% if loggedin %}
+                <h1 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">Bienvenue, {{ username }}!</h1>
+                <p>Date d'inscription : {{ user_date_new }}</p>
+                <p>Dernière connexion : {{ user_date_login }}</p>
+                <a href="{{ url_for('logout') }}" class="flex justify-center rounded-md bg-indigo-600 px-3 py-2.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500">Se déconnecter</a>
+
+            {% else %}
+                <div class="mt-4">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            <ul class="mb-4">
+                                {% for category, message in messages %}
+                                    <li class="text-red-500">{{ message }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    {% endwith %}
+                    <a href="{{ url_for('login') }}" class="flex justify-center rounded-md bg-indigo-600 px-3 py-2.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500">Se connecter</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
