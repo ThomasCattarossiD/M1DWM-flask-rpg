@@ -1,34 +1,38 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %}
+
+{% block content %}
 <div class="versus-mode">
-  <h2>Mode Versus</h2>
-  <div class="character-selection">
-    <div class="player1">
-      <h3>Joueur 1</h3>
-      <select id="player1-character">
-        {% for character in characters %}
-        <option value="{{ character.id }}">
-          {{ character.name }} - {{ character.race.name }}
-        </option>
-        {% endfor %}
-      </select>
+    <h2>Mode Versus</h2>
+    <form action="{{ url_for('game.fight') }}" method="post">
+        <div class="character-selection">
+            <div class="player1">
+                <h3>Joueur 1</h3>
+                <select name="player1">
+                    {% for character in characters %}
+                    <option value="{{ character.id }}">
+                        {{ character.name }} - {{ character.race.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="player2">
+                <h3>Joueur 2</h3>
+                <select name="player2">
+                    {% for character in characters %}
+                    <option value="{{ character.id }}">
+                        {{ character.name }} - {{ character.race.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <button type="submit">Commencer le combat</button>
+        </div>
+    </form>
+
+    <div id="battle-arena" style="display: none">
+        <!-- Zone de combat will be dynamically updated if needed -->
     </div>
-
-    <div class="player2">
-      <h3>Joueur 2</h3>
-      <select id="player2-character">
-        {% for character in characters %}
-        <option value="{{ character.id }}">
-          {{ character.name }} - {{ character.race.name }}
-        </option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <button onclick="startBattle()">Commencer le combat</button>
-  </div>
-
-  <div id="battle-arena" style="display: none">
-    <!-- Zone de combat -->
-  </div>
 </div>
 {% endblock %}
