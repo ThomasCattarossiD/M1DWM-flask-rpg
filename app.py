@@ -210,10 +210,6 @@ def add_item():
 
 @app.route('/delete/<int:item_id>', methods=['POST'])
 def delete_item(item_id):
-    if 'loggedin' not in session:
-        flash('Veuillez vous connecter.', 'danger')
-        return redirect(url_for('login'))
-
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM inventory WHERE id = ?', (item_id,))
@@ -289,10 +285,6 @@ def consume_item(item_id):
 
 @app.route('/edit/<int:item_id>', methods=['GET', 'POST'])
 def edit_item(item_id):
-    if 'loggedin' not in session:
-        flash('Veuillez vous connecter pour modifier un item.', 'danger')
-        return redirect(url_for('login'))
-
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM inventory WHERE id = ?', (item_id,))
