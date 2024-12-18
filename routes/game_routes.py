@@ -100,8 +100,18 @@ def quest_mode():
 
 def fight_hero_vs_monster(hero, monster):
     """Simulates a fight between a hero and a monster."""
-    output = "\n### Quest MODE ###\n"
-    print("### Quest MODE ###")
+    fight_data = {
+        "mode": "Quest",
+        "hero": {
+            "name": hero.name,
+            "original_health": hero.health,
+        },
+        "monster": {
+            "name": monster.name,
+            "original_health": monster.health,
+        },
+        "rounds": []
+    }
 
     original_hero_health = hero.health  # Store original hero health points
     output += f"{monster.name} VS {hero.name}\n"
@@ -111,45 +121,38 @@ def fight_hero_vs_monster(hero, monster):
 
     # Fight until one of the participants is defeated
     while monster.health > 0 and hero.health > 0:
-        output += f"\nRound {round}:\n"
-        print(f"Round {round}")
-
-        output += f"# PV de {hero.name} {hero.health}\n"
-        print(f"# PV de {hero.name} {hero.health}")
-
-        output += f"# PV de {monster.name} {monster.health}\n"
-        print(f"# PV de {monster.name} {monster.health}")
+        round_data = {
+            "round": round,
+            "hero_health": hero.health,
+            "monster_health": monster.health,
+        }
 
         # Hero attacks monster
-        damage_to_monster = hero.attack  # No defense for the monster
-        if damage_to_monster < 0:
-            damage_to_monster = 0  # No negative damage
+        damage_to_monster = max(hero.attack, 0)  # No negative damage
         monster.health -= damage_to_monster
-        output += f"{hero.name} deals {damage_to_monster} damage to {monster.name}.\n"
-        print(f"{hero.name} deals {damage_to_monster} damage to {monster.name}.")
+        round_data["damage_to_monster"] = damage_to_monster
 
         if monster.health <= 0:
-            output += f"\n{hero.name} wins!\n"
-            print(f"{hero.name} wins!")
+            round_data["winner"] = hero.name
+            fight_data["winner"] = hero.name
+            fight_data["rounds"].append(round_data)
             break  # Monster is defeated
 
         # Monster retaliates
-        damage_to_hero = monster.attack
-        if damage_to_hero < 0:
-            damage_to_hero = 0  # No negative damage
+        damage_to_hero = max(monster.attack, 0)  # No negative damage
         hero.health -= damage_to_hero
-        output += f"{monster.name} deals {damage_to_hero} damage to {hero.name}.\n"
-        print(f"{monster.name} deals {damage_to_hero} damage to {hero.name}.")
+        round_data["damage_to_hero"] = damage_to_hero
 
         if hero.health <= 0:
-            output += f"\n{monster.name} wins!\n"
-            print(f"{monster.name} wins!")
+            round_data["winner"] = monster.name
+            fight_data["winner"] = monster.name
+            fight_data["rounds"].append(round_data)
             break  # Hero is defeated
 
+        fight_data["rounds"].append(round_data)
         round += 1
 
-    return output
-
+    return json.dumps(fight_data, indent=4)
 
 @game_bp.route('/quest/<int:quest_id>', methods=['POST'])
 def start_quest(quest_id):
@@ -158,7 +161,10 @@ def start_quest(quest_id):
     opponent = get_opponent_for_quest(quest_id)
 
     # Call the quest logic (PvP battle or similar)
-    result = fight_hero_vs_monster(character, opponent)
+    result_json = fight_hero_vs_monster(character, opponent)
+
+    # Deserialize JSON string into a dictionary
+    result = json.loads(result_json)
 
     # Display the result
     return render_template('game/quest_result.html', result=result)
@@ -189,7 +195,10 @@ def fight():
         return "Invalid characters selected", 400
 
     # Run the fight logic
-    result = fight_logic(player1, player2)
+    result_json = fight_logic(player1, player2)
+
+    # Deserialize JSON string into a dictionary
+    result = json.loads(result_json)
 
     return render_template("game/fight_result.html", result=result)
 
@@ -293,49 +302,71 @@ def start_battle():
 
 def fight_logic(player1, player2):
     round = 1
-    output = "### PVP MODE ###\n"
-    output += f"{player1.name} VS {player2.name}\n\n"
+    fight_data = {
+        "mode": "PVP",
+        "players": {
+            "player1": {
+                "name": player1.name,
+                "original_health": player1.health,
+            },
+            "player2": {
+                "name": player2.name,
+                "original_health": player2.health,
+            }
+        },
+        "rounds": []
+    }
+
     original_player1_health = player1.health
     original_player2_health = player2.health
 
     while player1.health > 0 and player2.health > 0:
-        output += f"Round {round}:\n"
-        output += f"- {player1.name} HP: {player1.health} | {player2.name} HP: {player2.health}\n"
+        round_data = {
+            "round": round,
+            "player1_health": player1.health,
+            "player2_health": player2.health,
+        }
 
         # Determine initiative: Who attacks first
         if player1.attack > player2.attack:
-            output += f"{player1.name} attacks first!\n"
+            round_data["initiative"] = player1.name
+
             damage_to_player2 = max(player1.attack - player2.defense, 0)  # Attack - defense, cannot be negative
             player2.health -= damage_to_player2
-            output += f"{player1.name} deals {damage_to_player2} damage to {player2.name}\n"
+            round_data["damage_to_player2"] = damage_to_player2
+
             if player2.health <= 0:
-                output += f"{player1.name} wins!\n"
+                round_data["winner"] = player1.name
+                fight_data["winner"] = player1.name
+                fight_data["rounds"].append(round_data)
                 break
+
             damage_to_player1 = max(player2.attack - player1.defense, 0)
             player1.health -= damage_to_player1
-            output += f"{player2.name} deals {damage_to_player1} damage to {player1.name}\n"
+            round_data["damage_to_player1"] = damage_to_player1
+
         else:
-            output += f"{player2.name} attacks first!\n"
+            round_data["initiative"] = player2.name
+
             damage_to_player1 = max(player2.attack - player1.defense, 0)
             player1.health -= damage_to_player1
-            output += f"{player2.name} deals {damage_to_player1} damage to {player1.name}\n"
+            round_data["damage_to_player1"] = damage_to_player1
+
             if player1.health <= 0:
-                output += f"{player2.name} wins!\n"
+                round_data["winner"] = player2.name
+                fight_data["winner"] = player2.name
+                fight_data["rounds"].append(round_data)
                 break
+
             damage_to_player2 = max(player1.attack - player2.defense, 0)
             player2.health -= damage_to_player2
-            output += f"{player1.name} deals {damage_to_player2} damage to {player2.name}\n"
+            round_data["damage_to_player2"] = damage_to_player2
 
+        fight_data["rounds"].append(round_data)
         round += 1
-
-    # Declare the winner
-    if player1.health <= 0:
-        output += f"\n{player2.name} is victorious!\n"
-    elif player2.health <= 0:
-        output += f"\n{player1.name} is victorious!\n"
 
     # Reset player health for future battles (optional)
     player1.health = original_player1_health
     player2.health = original_player2_health
 
-    return output
+    return json.dumps(fight_data, indent=4)

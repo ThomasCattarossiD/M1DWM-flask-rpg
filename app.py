@@ -319,4 +319,5 @@ def edit_item(item_id):
     return render_template('edit_item.html', action='Modifier', item=item, item_types=item_types)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=3000
+            )
