@@ -2,8 +2,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for,
 from flask_login import current_user, login_required
 
 from init_db import get_db_connection
-from models.game import Character, Item, Mage, Monster, Race, Warrior
-from models.user import User
+from models.game import Character, Item, Mage, Monster, Race, Warrior, Tableau
 
 game_bp = Blueprint('game', __name__)
 
@@ -104,7 +103,7 @@ def fight_hero_vs_monster(hero, monster):
     output = "\n### Quest MODE ###\n"
     print("### Quest MODE ###")
 
-    original_hero_life = hero.health  # Store original hero life points
+    original_hero_health = hero.health  # Store original hero health points
     output += f"{monster.name} VS {hero.name}\n"
     print(f"{monster.name} VS {hero.name}")
 
@@ -202,8 +201,47 @@ def board_game():
         flash('Veuillez d\'abord créer ou sélectionner un personnage.', 'warning')
         return redirect(url_for('game.create_character'))
 
-    character = Character.get_by_id(current_user.active_character_id)
-    return render_template('game/board_game.html', character=character)
+    # Get the active character
+    hero = Character.get_by_id(current_user.active_character_id)
+
+    # Create the Tableau game instance
+    tableau_game = Tableau(hero)
+
+    # Play the entire game and get the result
+    game_result = play_game(tableau_game)
+
+    # You might want to save game results or update character stats here
+    # For example:
+    if tableau_game.is_completed:
+        hero.level =+ 1  # Assuming you have a method to add XP
+    elif tableau_game.is_game_over:
+        flash('Votre personnage est mort durant le jeu.', 'danger')
+
+    return render_template('game/board_game.html',
+                           character=hero,
+                           game_result=game_result,
+                           tableau_game=tableau_game)
+
+
+def play_game(Tableau):
+    """
+    Play the entire tableau game
+    """
+    output = f"Starting Tableau Game with {Tableau.hero.name}\n"
+
+    while Tableau.current_position < Tableau.length:
+        turn_output = Tableau.play_turn()
+        output += turn_output
+
+        # Check if hero died during the game
+        if Tableau.hero.health <= 0:
+            output += f"{Tableau.hero.name} died. Game Over!\n"
+            break
+
+    if Tableau.current_position >= Tableau.length:
+        output += f"{Tableau.hero.name} completed the tableau and gained experience!\n"
+
+    return output
 
 
 @game_bp.route('/character_profile')
