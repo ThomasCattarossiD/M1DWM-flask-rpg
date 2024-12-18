@@ -6,6 +6,8 @@ from models.game import Character, Item, Mage, Monster, Race, Warrior, Tableau
 
 game_bp = Blueprint('game', __name__)
 
+import json
+
 
 @game_bp.route('/create_character', methods=['GET', 'POST'])
 @login_required
