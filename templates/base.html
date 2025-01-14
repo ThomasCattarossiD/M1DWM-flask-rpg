@@ -62,7 +62,11 @@
           <ul class="navbar-nav">
             {% if current_user.is_authenticated %}
             <li class="nav-item">
-              <span class="nav-link">{{ current_user.username }}</span>
+              <span
+                class="nav-link"
+                style="margin: 0; padding: 0; padding-right: 10px"
+                >{{ current_user.username }}</span
+              >
             </li>
             <li class="nav-item">
               <form
@@ -70,7 +74,11 @@
                 method="POST"
                 class="d-inline"
               >
-                <button type="submit" class="btn btn-link nav-link">
+                <button
+                  type="submit"
+                  class="btn btn-link nav-link"
+                  style="margin: 0; padding: 0"
+                >
                   Déconnexion
                 </button>
               </form>

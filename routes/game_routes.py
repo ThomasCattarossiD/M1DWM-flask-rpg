@@ -115,10 +115,6 @@ def fight_hero_vs_monster(hero, monster):
         "rounds": []
     }
 
-    original_hero_health = hero.health  # Store original hero health points
-    output += f"{monster.name} VS {hero.name}\n"
-    print(f"{monster.name} VS {hero.name}")
-
     round = 1  # Reset round for each fight
 
     # Fight until one of the participants is defeated
@@ -222,16 +218,30 @@ def board_game():
     game_result = play_game(tableau_game)
 
     # You might want to save game results or update character stats here
-    # For example:
     if tableau_game.is_completed:
         hero.level =+ 1  # Assuming you have a method to add XP
     elif tableau_game.is_game_over:
         flash('Votre personnage est mort durant le jeu.', 'danger')
 
+    # JSON for dynamic styling
+    style_data = {
+        "background_color": "#282c34",
+        "header_color": "#61dafb",
+        "button_color": "#ff5733",
+        "text_color": "#ffffff",
+        "font_family": "Arial, sans-serif",
+        "font_size": "16px",
+        "board_border": "2px solid #61dafb",
+        "game_title_font_size": "2rem"
+    }
+
     return render_template('game/board_game.html',
                            character=hero,
                            game_result=game_result,
-                           tableau_game=tableau_game)
+                           tableau_game=tableau_game,
+                           style_data=style_data)
+
+
 
 
 def play_game(Tableau):
