@@ -13,45 +13,76 @@ import json
 @login_required
 def create_character():
     if request.method == 'POST':
-        name = request.form.get('name')
-        race = request.form.get('race')
-        character_class = request.form.get('class')
+        # Support des données JSON et form
+        name = request.form.get('name') or request.json.get('name')
+        race = request.form.get('race') or request.json.get('race')
+        character_class = request.form.get('class') or request.json.get('class')
+
+        if not name or not race or not character_class:
+            return jsonify({"success": False, "message": "Tous les champs sont requis"}), 400
 
         # Créer l'instance temporaire du personnage (sans ID)
-        if character_class == 'warrior':
-            character = Warrior(name=name, race=Race[race.upper()])
-        elif character_class == 'mage':
-            character = Mage(name=name, race=Race[race.upper()])
+        try:
+            if character_class == 'warrior':
+                character = Warrior(name=name, race=Race[race.upper()])
+            elif character_class == 'mage':
+                character = Mage(name=name, race=Race[race.upper()])
+            else:
+                return jsonify({"success": False, "message": "Classe de personnage invalide"}), 400
+                
+            # Sauvegarder dans la base de données
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO characters (name, race, class, health, attack, defense, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (character.name, character.race.name, character.type,
+                  character.health, character.attack, character.defense,
+                  current_user.id))
 
-        # Sauvegarder dans la base de données
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO characters (name, race, class, health, attack, defense, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (character.name, character.race.name, character.type,
-              character.health, character.attack, character.defense,
-              current_user.id))
+            character_id = cursor.lastrowid
+            # Mettre à jour l'ID du personnage
+            character.id = character_id
 
-        character_id = cursor.lastrowid
-        # Mettre à jour l'ID du personnage
-        character.id = character_id
+            # Mettre à jour l'active_character_id de l'utilisateur
+            cursor.execute('''
+                UPDATE user 
+                SET active_character_id = ? 
+                WHERE user_id = ?
+            ''', (character_id, current_user.id))
 
-        # Mettre à jour l'active_character_id de l'utilisateur
-        cursor.execute('''
-            UPDATE user 
-            SET active_character_id = ? 
-            WHERE user_id = ?
-        ''', (character_id, current_user.id))
+            conn.commit()
+            cursor.close()
+            conn.close()
 
-        conn.commit()
-        cursor.close()
-        conn.close()
+            return jsonify({
+                "success": True, 
+                "message": "Personnage créé avec succès",
+                "character": {
+                    "id": character_id,
+                    "name": character.name,
+                    "race": character.race.name,
+                    "class": character.type,
+                    "health": character.health,
+                    "attack": character.attack,
+                    "defense": character.defense
+                }
+            }), 201
+            
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Erreur: {str(e)}"}), 500
 
-        flash('Personnage créé avec succès!', 'success')
-        return redirect(url_for('game.character_profile'))
-
-    return render_template('game/create_character.html')
+    # Si c'est une requête GET, renvoyer les options disponibles
+    races = [race.name for race in Race]
+    classes = ["warrior", "mage"]
+    
+    return jsonify({
+        "success": True,
+        "options": {
+            "races": races,
+            "classes": classes
+        }
+    })
 
 
 @game_bp.route('/select_character/<int:character_id>', methods=['POST'])
@@ -66,38 +97,86 @@ def select_character(character_id):
         WHERE id = ? AND user_id = ?
     ''', (character_id, current_user.id))
 
-    if cursor.fetchone():
+    character = cursor.fetchone()
+    if character:
         cursor.execute('''
             UPDATE user 
             SET active_character_id = ? 
             WHERE user_id = ?
         ''', (character_id, current_user.id))
         conn.commit()
-        flash('Personnage sélectionné avec succès!', 'success')
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True, 
+            "message": "Personnage sélectionné avec succès",
+            "character_id": character_id
+        })
     else:
-        flash('Personnage non trouvé.', 'error')
-
-    cursor.close()
-    conn.close()
-    return redirect(url_for('game.character_list'))
+        cursor.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Personnage non trouvé"}), 404
 
 
 @game_bp.route('/versus')
 @login_required
 def versus_mode():
     characters = Character.get_all_by_user(current_user.id)
-    return render_template('game/versus.html', characters=characters)
+    
+    # Convertir les personnages en format JSON
+    characters_data = []
+    for char in characters:
+        characters_data.append({
+            "id": char.id,
+            "name": char.name,
+            "race": char.race.name,
+            "class": char.type,
+            "health": char.health,
+            "attack": char.attack,
+            "defense": char.defense,
+            "level": char.level
+        })
+    
+    return jsonify({
+        "success": True,
+        "characters": characters_data
+    })
 
 
 @game_bp.route('/quests')
 @login_required
 def quest_mode():
     if not current_user.active_character_id:
-        flash('Veuillez d\'abord créer ou sélectionner un personnage.', 'warning')
-        return redirect(url_for('game.create_character'))
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/create_character"
+        }), 400
 
     character = Character.get_by_id(current_user.active_character_id)
-    return render_template('game/quests.html', character=character)
+    
+    # Liste de quêtes disponibles
+    quests = [
+        {"id": 1, "name": "La forêt mystérieuse", "difficulty": "Facile", "enemy": "Forest Monster"},
+        {"id": 2, "name": "Les cavernes obscures", "difficulty": "Moyen", "enemy": "Cave Troll"},
+        {"id": 3, "name": "Le repaire du dragon", "difficulty": "Difficile", "enemy": "Dragon"}
+    ]
+    
+    return jsonify({
+        "success": True,
+        "character": {
+            "id": character.id,
+            "name": character.name,
+            "race": character.race.name,
+            "class": character.type,
+            "health": character.health,
+            "attack": character.attack,
+            "defense": character.defense,
+            "level": character.level
+        },
+        "quests": quests
+    })
 
 
 def fight_hero_vs_monster(hero, monster):
@@ -152,8 +231,17 @@ def fight_hero_vs_monster(hero, monster):
 
     return json.dumps(fight_data, indent=4)
 
+
 @game_bp.route('/quest/<int:quest_id>', methods=['POST'])
+@login_required
 def start_quest(quest_id):
+    if not current_user.active_character_id:
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/create_character"
+        }), 400
+        
     # Fetch the character and the opponent for the quest
     character = Character.get_by_id(current_user.active_character_id)
     opponent = get_opponent_for_quest(quest_id)
@@ -163,9 +251,15 @@ def start_quest(quest_id):
 
     # Deserialize JSON string into a dictionary
     result = json.loads(result_json)
-
-    # Display the result
-    return render_template('game/quest_result.html', result=result)
+    
+    # Update character stats based on result if needed
+    # (e.g., add experience, health recovery, etc.)
+    
+    return jsonify({
+        "success": True,
+        "quest_id": quest_id,
+        "result": result
+    })
 
 
 def get_opponent_for_quest(quest_id):
@@ -181,8 +275,15 @@ def get_opponent_for_quest(quest_id):
 @game_bp.route("/fight", methods=["POST"])
 @login_required
 def fight():
-    player1_id = int(request.form.get("player1"))
-    player2_id = int(request.form.get("player2"))
+    # Support des données JSON et form
+    player1_id = request.form.get('player1') or request.json.get('player1')
+    player2_id = request.form.get('player2') or request.json.get('player2')
+    
+    if not player1_id or not player2_id:
+        return jsonify({"success": False, "message": "IDs des deux joueurs requis"}), 400
+        
+    player1_id = int(player1_id)
+    player2_id = int(player2_id)
 
     # Retrieve characters based on IDs (replace with DB query)
     characters = Character.get_all_by_user(current_user.id)
@@ -190,7 +291,7 @@ def fight():
     player2 = next((c for c in characters if c.id == player2_id), None)
 
     if not player1 or not player2:
-        return "Invalid characters selected", 400
+        return jsonify({"success": False, "message": "Personnages invalides"}), 400
 
     # Run the fight logic
     result_json = fight_logic(player1, player2)
@@ -198,15 +299,21 @@ def fight():
     # Deserialize JSON string into a dictionary
     result = json.loads(result_json)
 
-    return render_template("game/fight_result.html", result=result)
+    return jsonify({
+        "success": True,
+        "result": result
+    })
 
 
 @game_bp.route('/board_game')
 @login_required
 def board_game():
     if not current_user.active_character_id:
-        flash('Veuillez d\'abord créer ou sélectionner un personnage.', 'warning')
-        return redirect(url_for('game.create_character'))
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/create_character"
+        }), 400
 
     # Get the active character
     hero = Character.get_by_id(current_user.active_character_id)
@@ -218,11 +325,11 @@ def board_game():
     game_result = play_game(tableau_game)
 
     # You might want to save game results or update character stats here
+    character_updated = False
     if tableau_game.is_completed:
-        hero.level =+ 1  # Assuming you have a method to add XP
-    elif tableau_game.is_game_over:
-        flash('Votre personnage est mort durant le jeu.', 'danger')
-
+        hero.level += 1  # Assuming you have a method to add XP
+        character_updated = True
+        
     # JSON for dynamic styling
     style_data = {
         "background_color": "#282c34",
@@ -235,13 +342,28 @@ def board_game():
         "game_title_font_size": "2rem"
     }
 
-    return render_template('game/board_game.html',
-                           character=hero,
-                           game_result=game_result,
-                           tableau_game=tableau_game,
-                           style_data=style_data)
-
-
+    return jsonify({
+        "success": True,
+        "character": {
+            "id": hero.id,
+            "name": hero.name,
+            "race": hero.race.name,
+            "class": hero.type,
+            "health": hero.health,
+            "attack": hero.attack,
+            "defense": hero.defense,
+            "level": hero.level
+        },
+        "game_result": game_result,
+        "tableau_game": {
+            "current_position": tableau_game.current_position,
+            "length": tableau_game.length,
+            "is_completed": tableau_game.is_completed,
+            "is_game_over": tableau_game.is_game_over
+        },
+        "character_updated": character_updated,
+        "style_data": style_data
+    })
 
 
 def play_game(Tableau):
@@ -286,30 +408,81 @@ def character_profile():
             defense=character_data['defense'],
             level=character_data['level']
         )
-        return render_template('game/character_profile.html', character=character)
+        
+        equipment = []
+        # Ici, vous pourriez récupérer l'équipement du personnage
+        # Exemple fictif:
+        # equipment = get_character_equipment(character.id)
+        
+        return jsonify({
+            "success": True,
+            "character": {
+                "id": character.id,
+                "name": character.name,
+                "race": character.race.name,
+                "class": character.type,
+                "health": character.health,
+                "attack": character.attack,
+                "defense": character.defense,
+                "level": character.level
+            },
+            "equipment": equipment
+        })
 
-    flash('Aucun personnage trouvé.', 'warning')
-    return redirect(url_for('game.create_character'))
+    return jsonify({
+        "success": False, 
+        "message": "Aucun personnage trouvé", 
+        "redirect": "/game/create_character"
+    }), 404
 
 
 @game_bp.route('/characters')
 @login_required
 def character_list():
     characters = Character.get_all_by_user(current_user.id)
-    return render_template('game/character_list.html', characters=characters)
+    
+    # Convertir les personnages en format JSON
+    characters_data = []
+    for char in characters:
+        characters_data.append({
+            "id": char.id,
+            "name": char.name,
+            "race": char.race.name,
+            "class": char.type,
+            "health": char.health,
+            "attack": char.attack,
+            "defense": char.defense,
+            "level": char.level,
+            "is_active": char.id == current_user.active_character_id
+        })
+    
+    return jsonify({
+        "success": True,
+        "characters": characters_data,
+        "active_character_id": current_user.active_character_id
+    })
 
 
 @game_bp.route("/start_battle", methods=["POST"])
+@login_required
 def start_battle():
     player1_id = request.json.get("player1")
     player2_id = request.json.get("player2")
+
+    if not player1_id or not player2_id:
+        return jsonify({"success": False, "message": "IDs des deux joueurs requis"}), 400
 
     # Simulate game logic
     result = f"Player 1 (Character {player1_id}) battles Player 2 (Character {player2_id})!"
     # Your actual game function would go here instead of this mock result.
 
     # Return the result
-    return jsonify({"result": result})
+    return jsonify({
+        "success": True,
+        "result": result,
+        "player1_id": player1_id,
+        "player2_id": player2_id
+    })
 
 
 def fight_logic(player1, player2):
@@ -356,7 +529,6 @@ def fight_logic(player1, player2):
             damage_to_player1 = max(player2.attack - player1.defense, 0)
             player1.health -= damage_to_player1
             round_data["damage_to_player1"] = damage_to_player1
-
         else:
             round_data["initiative"] = player2.name
 
