@@ -1,12 +1,11 @@
 import os
 
 from dotenv import load_dotenv
-from flask import (Flask, flash, redirect, render_template, request, session,
-                   url_for)
+from flask import (Flask, redirect, request, session, url_for, jsonify)
+from flask_cors import CORS 
 from flask_bcrypt import Bcrypt
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
-
 from init_db import get_db_connection
 from models.user import User
 from routes.game_routes import game_bp
@@ -16,6 +15,7 @@ load_dotenv()
 
 # Initialiser l'application Flask
 app = Flask(__name__)
+CORS(app)
 
 # Charger la clé secrète depuis le fichier .env pour sécuriser les sessions
 app.secret_key = os.getenv('SECRET_KEY')
@@ -56,8 +56,11 @@ def home():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form['email']
-        password = request.form['password']
+        email = request.form.get('email') or request.json.get('email')
+        password = request.form.get('password') or request.json.get('password')
+
+        if not email or not password:
+            return jsonify({"success": False, "message": "Email ou mot de passe manquant"}), 400
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -74,27 +77,36 @@ def login():
                 user_data['active_character_id']
             )
             login_user(user)
-            return redirect(url_for('inventory'))
+            return jsonify({
+                "success": True, 
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "active_character_id": user.active_character_id
+                },
+                "message": "Connexion réussie"
+            })
         else:
-            flash('Email ou mot de passe incorrect !', 'danger')
+            return jsonify({"success": False, "message": "Email ou mot de passe incorrect"}), 401
 
-    return render_template('login.html')
+    # Si c'est une requête GET, informer que seules les requêtes POST sont acceptées
+    return jsonify({"success": False, "message": "Méthode non autorisée"}), 405
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        email = request.form['email']
-        username = request.form['username']
-        password = request.form['password']
-        recheck_password = request.form['recheck_password']
+        # Support des données JSON et form
+        email = request.form.get('email') or request.json.get('email')
+        username = request.form.get('username') or request.json.get('username')
+        password = request.form.get('password') or request.json.get('password')
+        recheck_password = request.form.get('recheck_password') or request.json.get('recheck_password')
 
         if not email or not username or not password or not recheck_password:
-            flash('Tous les champs sont obligatoires !', 'danger')
-            return redirect(url_for('register'))
+            return jsonify({"success": False, "message": "Tous les champs sont obligatoires"}), 400
 
         if password != recheck_password:
-            flash('Les mots de passe ne correspondent pas !', 'danger')
-            return redirect(url_for('register'))
+            return jsonify({"success": False, "message": "Les mots de passe ne correspondent pas"}), 400
 
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
@@ -104,7 +116,9 @@ def register():
         account = cursor.fetchone()
 
         if account:
-            flash('Cet email est déjà utilisé!', 'danger')
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Cet email est déjà utilisé"}), 409
         else:
             cursor.execute(
                 'INSERT INTO user (user_login, user_password, user_mail) VALUES (?, ?, ?)',
@@ -112,29 +126,40 @@ def register():
             )
             conn.commit()
             user_id = cursor.lastrowid
+            cursor.close()
+            conn.close()
+            
             user = User(user_id, username, email)
             login_user(user)
-            flash('Compte créé avec succès !', 'success')
-            return redirect(url_for('home'))
+            
+            return jsonify({
+                "success": True, 
+                "user": {
+                    "id": user_id,
+                    "username": username,
+                    "email": email
+                },
+                "message": "Compte créé avec succès"
+            }), 201
 
-        cursor.close()
-        conn.close()
-
-    return render_template('register.html')
+    # Si c'est une requête GET, informer que seules les requêtes POST sont acceptées
+    return jsonify({"success": False, "message": "Méthode non autorisée"}), 405
 
 @app.route('/logout', methods=['POST'])
 @login_required
 def logout():
     logout_user()
-    flash('Vous avez été déconnecté !', 'success')
-    return redirect(url_for('login'))
+    return jsonify({"success": True, "message": "Déconnexion réussie"})
 
 @app.route('/inventory')
 @login_required
 def inventory():
     if not current_user.active_character_id:
-        flash('Veuillez d\'abord sélectionner un personnage.', 'warning')
-        return redirect(url_for('game.character_list'))
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/character_list"
+        }), 400
 
     sort_by = request.args.get('sort_by', 'item_name')
     order = request.args.get('order', 'asc')
@@ -162,162 +187,302 @@ def inventory():
         ORDER BY {sort_by} {order}
     '''
     cursor.execute(query, (current_user.active_character_id,))
-    items = cursor.fetchall()
+    items_data = cursor.fetchall()
     cursor.close()
     conn.close()
+    
+    # Convertir les résultats en liste de dictionnaires pour JSON
+    items = []
+    for item in items_data:
+        items.append({
+            "id": item['item_id'],
+            "name": item['item_name'],
+            "type": item['item_type'],
+            "quantity": item['item_quantity']
+        })
 
-    return render_template('inventory.html', 
-                         items=items, 
-                         character_name=character['name'], 
-                         sort_by=sort_by, 
-                         order=order)
+    return jsonify({
+        "success": True,
+        "character_name": character['name'] if character else None,
+        "items": items,
+        "sort_by": sort_by,
+        "order": order
+    })
 
-@app.route('/add_item', methods=['GET', 'POST'])
+
+@app.route('/add_item', methods=['POST'])
 @login_required
 def add_item():
     if not current_user.active_character_id:
-        flash('Veuillez d\'abord sélectionner un personnage.', 'warning')
-        return redirect(url_for('game.character_list'))
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/character_list"
+        }), 400
+
+    # Support des données JSON et form
+    name = request.form.get('name') or request.json.get('name')
+    type_id = request.form.get('type_id') or request.json.get('type_id')
+    quantity = request.form.get('quantity') or request.json.get('quantity')
+
+    if not name or not type_id or not quantity:
+        return jsonify({"success": False, "message": "Tous les champs sont obligatoires"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM item_types')
-    item_types = cursor.fetchall()
-
-    if request.method == 'POST':
-        name = request.form['name']
-        type_id = request.form['type_id']
-        quantity = request.form['quantity']
-
-        if not name or not type_id or not quantity:
-            flash('Tous les champs sont obligatoires !', 'danger')
-            return redirect(url_for('add_item'))
-
+    
+    try:
         cursor.execute('''
             INSERT INTO inventory (character_id, name, type_id, quantity) 
             VALUES (?, ?, ?, ?)''',
             (current_user.active_character_id, name, type_id, quantity))
         
+        item_id = cursor.lastrowid
         conn.commit()
+        
+        # Récupérer les détails du type de l'objet pour la réponse
+        cursor.execute('SELECT type_name FROM item_types WHERE id = ?', (type_id,))
+        type_name = cursor.fetchone()['type_name']
+        
         cursor.close()
         conn.close()
-        flash('Objet ajouté avec succès !', 'success')
-        return redirect(url_for('inventory'))
+        
+        return jsonify({
+            "success": True, 
+            "message": "Objet ajouté avec succès",
+            "item": {
+                "id": item_id,
+                "name": name,
+                "type": type_name,
+                "quantity": quantity
+            }
+        }), 201
+        
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": False, "message": f"Erreur: {str(e)}"}), 500
 
-    cursor.close()
-    conn.close()
-    return render_template('edit_item.html', action='Ajouter', item=None, item_types=item_types)
-
-@app.route('/delete/<int:item_id>', methods=['POST'])
+@app.route('/delete/<int:item_id>', methods=['DELETE'])
+@login_required
 def delete_item(item_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM inventory WHERE id = ?', (item_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    flash('Objet supprimé avec succès !', 'success')
-    return redirect(url_for('inventory'))
+    
+    try:
+        # Vérifier que l'objet appartient au personnage actif
+        cursor.execute('SELECT * FROM inventory WHERE id = ? AND character_id = ?', 
+                       (item_id, current_user.active_character_id))
+        item = cursor.fetchone()
+        
+        if not item:
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Objet non trouvé ou non autorisé"}), 404
+        
+        cursor.execute('DELETE FROM inventory WHERE id = ?', (item_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"success": True, "message": "Objet supprimé avec succès", "id": item_id})
+        
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": False, "message": f"Erreur: {str(e)}"}), 500
 
 @app.route('/consume/<int:item_id>', methods=['POST'])
 @login_required
 def consume_item(item_id):
     if not current_user.active_character_id:
-        flash('Veuillez d\'abord sélectionner un personnage.', 'warning')
-        return redirect(url_for('game.character_list'))
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/character_list"
+        }), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Vérifier que l'objet appartient au personnage actif
-    cursor.execute('''
-        SELECT inventory.*, item_types.type_name 
-        FROM inventory 
-        JOIN item_types ON inventory.type_id = item_types.id 
-        WHERE inventory.id = ? AND inventory.character_id = ?
-    ''', (item_id, current_user.active_character_id))
-    
-    item = cursor.fetchone()
-    
-    if not item:
-        flash('Objet non trouvé.', 'error')
-        return redirect(url_for('inventory'))
-    
-    if item['type_name'] not in ['potion', 'plante']:
-        flash('Cet objet ne peut pas être consommé.', 'warning')
-        return redirect(url_for('inventory'))
-    
-    # Appliquer les effets de l'objet
-    if item['type_name'] == 'potion':
-        # Augmenter les points de vie du personnage
+    try:
+        # Vérifier que l'objet appartient au personnage actif
         cursor.execute('''
-            UPDATE characters 
-            SET health = MIN(health + 20, 100) 
-            WHERE id = ?
-        ''', (current_user.active_character_id,))
-        effect_message = "Vous avez récupéré 20 points de vie!"
-    elif item['type_name'] == 'plante':
-        # Augmenter temporairement l'attaque
-        cursor.execute('''
-            UPDATE characters 
-            SET attack = attack + 5 
-            WHERE id = ?
-        ''', (current_user.active_character_id,))
-        effect_message = "Votre attaque a augmenté de 5 points!"
-    
-    # Réduire la quantité de l'objet
-    if item['quantity'] > 1:
-        cursor.execute('''
-            UPDATE inventory 
-            SET quantity = quantity - 1 
-            WHERE id = ?
-        ''', (item_id,))
-    else:
-        cursor.execute('DELETE FROM inventory WHERE id = ?', (item_id,))
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    
-    flash(f'Objet consommé! {effect_message}', 'success')
-    return redirect(url_for('inventory'))
-
-@app.route('/edit/<int:item_id>', methods=['GET', 'POST'])
-def edit_item(item_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM inventory WHERE id = ?', (item_id,))
-    item = cursor.fetchone()
-
-    if not item:
-        flash("L'objet n'existe pas.", 'danger')
-        return redirect(url_for('inventory'))
-
-    cursor.execute('SELECT * FROM item_types')
-    item_types = cursor.fetchall()
-
-    if request.method == 'POST':
-        name = request.form['name']
-        type_id = request.form['type_id']
-        quantity = request.form['quantity']
-
-        if not name or not type_id or not quantity:
-            flash('Tous les champs sont obligatoires !', 'danger')
-            return redirect(url_for('edit_item', item_id=item_id))
-
-        cursor.execute('UPDATE inventory SET name = ?, type_id = ?, quantity = ? WHERE id = ?',
-                       (name, type_id, quantity, item_id))
+            SELECT inventory.*, item_types.type_name 
+            FROM inventory 
+            JOIN item_types ON inventory.type_id = item_types.id 
+            WHERE inventory.id = ? AND inventory.character_id = ?
+        ''', (item_id, current_user.active_character_id))
+        
+        item = cursor.fetchone()
+        
+        if not item:
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Objet non trouvé"}), 404
+        
+        if item['type_name'] not in ['potion', 'plante']:
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Cet objet ne peut pas être consommé"}), 400
+        
+        # Appliquer les effets de l'objet
+        effect = {}
+        if item['type_name'] == 'potion':
+            cursor.execute('''
+                UPDATE characters 
+                SET health = MIN(health + 20, 100) 
+                WHERE id = ?
+            ''', (current_user.active_character_id,))
+            effect = {"type": "health", "value": 20}
+        elif item['type_name'] == 'plante':
+            cursor.execute('''
+                UPDATE characters 
+                SET attack = attack + 5 
+                WHERE id = ?
+            ''', (current_user.active_character_id,))
+            effect = {"type": "attack", "value": 5}
+        
+        # Réduire la quantité de l'objet
+        new_quantity = item['quantity'] - 1
+        if new_quantity > 0:
+            cursor.execute('''
+                UPDATE inventory 
+                SET quantity = quantity - 1 
+                WHERE id = ?
+            ''', (item_id,))
+            item_status = {"id": item_id, "quantity": new_quantity}
+        else:
+            cursor.execute('DELETE FROM inventory WHERE id = ?', (item_id,))
+            item_status = {"id": item_id, "deleted": True}
+        
         conn.commit()
+        
+        # Récupérer les nouvelles stats du personnage pour la réponse
+        cursor.execute('SELECT health, attack FROM characters WHERE id = ?', 
+                      (current_user.active_character_id,))
+        character_stats = cursor.fetchone()
+        
         cursor.close()
         conn.close()
-        flash('Objet modifié avec succès !', 'success')
-        return redirect(url_for('inventory'))
+        
+        return jsonify({
+            "success": True, 
+            "message": f"Objet consommé avec succès", 
+            "effect": effect,
+            "item": item_status,
+            "character": {
+                "health": character_stats['health'],
+                "attack": character_stats['attack']
+            }
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": False, "message": f"Erreur: {str(e)}"}), 500
 
-    cursor.close()
-    conn.close()
-    return render_template('edit_item.html', action='Modifier', item=item, item_types=item_types)
+@app.route('/edit/<int:item_id>', methods=['GET', 'PUT'])
+@login_required
+def edit_item(item_id):
+    if not current_user.active_character_id:
+        return jsonify({
+            "success": False, 
+            "message": "Aucun personnage actif", 
+            "redirect": "/game/character_list"
+        }), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if request.method == 'GET':
+        cursor.execute('SELECT * FROM inventory WHERE id = ? AND character_id = ?', 
+                      (item_id, current_user.active_character_id))
+        item = cursor.fetchone()
+        
+        if not item:
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Objet non trouvé ou non autorisé"}), 404
+        
+        cursor.execute('SELECT * FROM item_types')
+        item_types_data = cursor.fetchall()
+        
+        # Convertir en liste pour JSON
+        item_types = []
+        for type_item in item_types_data:
+            item_types.append({
+                "id": type_item['id'],
+                "name": type_item['type_name']
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "item": {
+                "id": item['id'],
+                "name": item['name'],
+                "type_id": item['type_id'],
+                "quantity": item['quantity']
+            },
+            "item_types": item_types
+        })
+    
+    elif request.method == 'PUT':
+        # Support des données JSON
+        name = request.json.get('name')
+        type_id = request.json.get('type_id')
+        quantity = request.json.get('quantity')
+        
+        if not name or not type_id or not quantity:
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Tous les champs sont obligatoires"}), 400
+        
+        try:
+            # Vérifier que l'objet appartient au personnage actif
+            cursor.execute('SELECT id FROM inventory WHERE id = ? AND character_id = ?', 
+                          (item_id, current_user.active_character_id))
+            
+            if not cursor.fetchone():
+                cursor.close()
+                conn.close()
+                return jsonify({"success": False, "message": "Objet non trouvé ou non autorisé"}), 404
+            
+            cursor.execute('UPDATE inventory SET name = ?, type_id = ?, quantity = ? WHERE id = ?',
+                           (name, type_id, quantity, item_id))
+            
+            # Récupérer le nom du type pour la réponse
+            cursor.execute('SELECT type_name FROM item_types WHERE id = ?', (type_id,))
+            type_data = cursor.fetchone()
+            type_name = type_data['type_name'] if type_data else "Unknown"
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            return jsonify({
+                "success": True, 
+                "message": "Objet modifié avec succès",
+                "item": {
+                    "id": item_id,
+                    "name": name,
+                    "type": type_name,
+                    "type_id": type_id,
+                    "quantity": quantity
+                }
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": f"Erreur: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000
-            )
+    app.run(debug=True, port=5000)
