@@ -499,6 +499,30 @@ def get_inventory():
     
     return jsonify(inventory_data)
 
+@app.route('/api/check_auth', methods=['GET'])
+def check_auth():
+    """
+    Vérifie si l'utilisateur est actuellement authentifié
+    Utilisé par le frontend React pour valider l'état de connexion
+    """
+    if current_user.is_authenticated:
+        # Renvoyer les informations de l'utilisateur pour le frontend
+        return jsonify({
+            "authenticated": True,
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "active_character_id": current_user.active_character_id
+            }
+        })
+    else:
+        # L'utilisateur n'est pas connecté
+        return jsonify({
+            "authenticated": False
+        })
+
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
