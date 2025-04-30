@@ -554,3 +554,243 @@ def fight_logic(player1, player2):
     player2.health = original_player2_health
 
     return json.dumps(fight_data, indent=4)
+
+@game_bp.route('/characters', methods=['GET'])
+@login_required
+def get_characters():
+    """
+    Récupérer tous les personnages de l'utilisateur connecté sous format JSON
+    pour l'API React
+    """
+    characters = Character.get_all_by_user(current_user.id)
+    characters_data = []
+    
+    for character in characters:
+        characters_data.append({
+            'id': character.id,
+            'name': character.name,
+            'race': character.race.name if hasattr(character.race, 'name') else str(character.race),
+            'class': character.type,
+            'health': character.health,
+            'attack': character.attack,
+            'defense': character.defense,
+            'level': character.level
+        })
+    
+    return jsonify(characters_data)
+
+
+@game_bp.route('/character_profile', methods=['GET'])
+@login_required
+def get_character_profile():
+    """
+    Récupérer les détails du personnage actif pour l'API React
+    """
+    if not current_user.active_character_id:
+        return jsonify({'error': 'Aucun personnage actif'}), 404
+    
+    character = Character.get_by_id(current_user.active_character_id)
+    
+    if not character:
+        return jsonify({'error': 'Personnage non trouvé'}), 404
+    
+    character_data = {
+        'id': character.id,
+        'name': character.name,
+        'race': character.race.name if hasattr(character.race, 'name') else str(character.race),
+        'class': character.type,
+        'health': character.health,
+        'attack': character.attack,
+        'defense': character.defense,
+        'level': character.level
+    }
+    
+    return jsonify(character_data)
+
+
+@game_bp.route('/quest/<int:quest_id>/details', methods=['GET'])
+@login_required
+def get_quest_details(quest_id):
+    """
+    Récupérer les détails d'une quête spécifique pour l'API React
+    """
+    quests = {
+        1: {
+            'id': 1,
+            'title': 'Forêt Enchantée',
+            'description': 'Explorez la forêt mystérieuse et affrontez le monstre qui y rôde.',
+            'difficulty': 'Facile',
+            'reward': "50 pièces d'or, 1 potion de santé",
+            'monster': 'Monstre de la forêt',
+            'monsterHealth': 50,
+            'monsterAttack': 10,
+        },
+        2: {
+            'id': 2,
+            'title': 'Cavernes Sombres',
+            'description': 'Descendez dans les profondeurs des cavernes et combattez le troll qui terrorise les mineurs.',
+            'difficulty': 'Moyen',
+            'reward': "100 pièces d'or, 1 équipement rare",
+            'monster': 'Troll des cavernes',
+            'monsterHealth': 80,
+            'monsterAttack': 15,
+        },
+        3: {
+            'id': 3,
+            'title': 'Montagne du Dragon',
+            'description': 'Escaladez la montagne périlleuse et affrontez le dragon ancestral qui y sommeille.',
+            'difficulty': 'Difficile',
+            'reward': "300 pièces d'or, 1 arme légendaire",
+            'monster': 'Dragon',
+            'monsterHealth': 200,
+            'monsterAttack': 40,
+        }
+    }
+    
+    if quest_id not in quests:
+        return jsonify({'error': 'Quête non trouvée'}), 404
+    
+    return jsonify(quests[quest_id])
+
+
+@game_bp.route('/item_types', methods=['GET'])
+@login_required
+def get_item_types():
+    """
+    Récupérer la liste des types d'objets disponibles
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, type_name FROM item_types')
+    item_types = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    return jsonify([{'id': t['id'], 'type_name': t['type_name']} for t in item_types])
+
+
+@game_bp.route('/item/<int:item_id>', methods=['GET'])
+@login_required
+def get_item_details(item_id):
+    """
+    Récupérer les détails d'un objet spécifique
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Vérifier que l'objet appartient au personnage actif
+    cursor.execute('''
+        SELECT inventory.id, inventory.name, inventory.type_id, inventory.quantity 
+        FROM inventory 
+        WHERE inventory.id = ? AND inventory.character_id = ?
+    ''', (item_id, current_user.active_character_id))
+    
+    item = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if not item:
+        return jsonify({'error': 'Objet non trouvé'}), 404
+    
+    item_data = {
+        'id': item['id'],
+        'name': item['name'],
+        'type_id': item['type_id'],
+        'quantity': item['quantity']
+    }
+    
+    return jsonify(item_data)
+
+
+@game_bp.route('/quests/available', methods=['GET'])
+@login_required
+def get_available_quests():
+    """
+    Récupérer la liste des quêtes disponibles pour le personnage actif
+    """
+    if not current_user.active_character_id:
+        return jsonify({'error': 'Aucun personnage actif'}), 400
+    
+    character = Character.get_by_id(current_user.active_character_id)
+    character_level = character.level if character else 1
+    
+    # Dans une application réelle, vous récupéreriez les quêtes depuis la base de données
+    # et filtreriez en fonction du niveau du personnage
+    quests = [
+        {
+            'id': 1,
+            'title': 'Forêt Enchantée',
+            'description': 'Explorez la forêt mystérieuse et affrontez le monstre qui y rôde.',
+            'difficulty': 'Facile',
+            'minLevel': 1,
+        },
+        {
+            'id': 2,
+            'title': 'Cavernes Sombres',
+            'description': 'Descendez dans les profondeurs des cavernes et combattez le troll.',
+            'difficulty': 'Moyen',
+            'minLevel': 3,
+        },
+        {
+            'id': 3,
+            'title': 'Montagne du Dragon',
+            'description': 'Escaladez la montagne périlleuse et affrontez le dragon ancestral.',
+            'difficulty': 'Difficile',
+            'minLevel': 5,
+        }
+    ]
+    
+    # Marquer les quêtes comme disponibles ou non en fonction du niveau
+    for quest in quests:
+        quest['available'] = character_level >= quest['minLevel']
+    
+    return jsonify(quests)
+
+
+@game_bp.route('/board_game/result', methods=['GET'])
+@login_required
+def get_board_game_result():
+    """
+    Obtenir le résultat du jeu de plateau pour le personnage actif
+    """
+    if not current_user.active_character_id:
+        return jsonify({'error': 'Aucun personnage actif'}), 400
+    
+    hero = Character.get_by_id(current_user.active_character_id)
+    
+    if not hero:
+        return jsonify({'error': 'Personnage non trouvé'}), 404
+    
+    # Créer une instance du jeu de plateau
+    tableau_game = Tableau(hero)
+    
+    # Jouer le jeu et obtenir le résultat
+    game_result = play_game(tableau_game)
+    
+    # Mettre à jour le personnage si nécessaire
+    if tableau_game.is_completed and not tableau_game.is_game_over:
+        # Le personnage a terminé le jeu avec succès
+        hero.level += 1
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE characters SET level = ? WHERE id = ?', (hero.level, hero.id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    
+    result_data = {
+        'character': {
+            'id': hero.id,
+            'name': hero.name,
+            'health': hero.health,
+            'level': hero.level,
+        },
+        'game_completed': tableau_game.is_completed,
+        'game_over': tableau_game.is_game_over,
+        'position': tableau_game.current_position,
+        'board_length': tableau_game.length,
+        'result_text': game_result
+    }
+    
+    return jsonify(result_data)

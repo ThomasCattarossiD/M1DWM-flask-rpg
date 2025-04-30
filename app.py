@@ -53,163 +53,6 @@ def home():
         return redirect(url_for('inventory'))
     return redirect(url_for('login'))
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email = request.form.get('email') or request.json.get('email')
-        password = request.form.get('password') or request.json.get('password')
-
-        if not email or not password:
-            return jsonify({"success": False, "message": "Email ou mot de passe manquant"}), 400
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM user WHERE user_mail = ?', (email,))
-        user_data = cursor.fetchone()
-        cursor.close()
-        conn.close()
-
-        if user_data and bcrypt.check_password_hash(user_data['user_password'], password):
-            user = User(
-                user_data['user_id'], 
-                user_data['user_login'], 
-                user_data['user_mail'],
-                user_data['active_character_id']
-            )
-            login_user(user)
-            return jsonify({
-                "success": True, 
-                "user": {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "active_character_id": user.active_character_id
-                },
-                "message": "Connexion réussie"
-            })
-        else:
-            return jsonify({"success": False, "message": "Email ou mot de passe incorrect"}), 401
-
-    # Si c'est une requête GET, informer que seules les requêtes POST sont acceptées
-    return jsonify({"success": False, "message": "Méthode non autorisée"}), 405
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        # Support des données JSON et form
-        email = request.form.get('email') or request.json.get('email')
-        username = request.form.get('username') or request.json.get('username')
-        password = request.form.get('password') or request.json.get('password')
-        recheck_password = request.form.get('recheck_password') or request.json.get('recheck_password')
-
-        if not email or not username or not password or not recheck_password:
-            return jsonify({"success": False, "message": "Tous les champs sont obligatoires"}), 400
-
-        if password != recheck_password:
-            return jsonify({"success": False, "message": "Les mots de passe ne correspondent pas"}), 400
-
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM user WHERE user_mail = ?', (email,))
-        account = cursor.fetchone()
-
-        if account:
-            cursor.close()
-            conn.close()
-            return jsonify({"success": False, "message": "Cet email est déjà utilisé"}), 409
-        else:
-            cursor.execute(
-                'INSERT INTO user (user_login, user_password, user_mail) VALUES (?, ?, ?)',
-                (username, hashed_password, email)
-            )
-            conn.commit()
-            user_id = cursor.lastrowid
-            cursor.close()
-            conn.close()
-            
-            user = User(user_id, username, email)
-            login_user(user)
-            
-            return jsonify({
-                "success": True, 
-                "user": {
-                    "id": user_id,
-                    "username": username,
-                    "email": email
-                },
-                "message": "Compte créé avec succès"
-            }), 201
-
-    # Si c'est une requête GET, informer que seules les requêtes POST sont acceptées
-    return jsonify({"success": False, "message": "Méthode non autorisée"}), 405
-
-@app.route('/logout', methods=['POST'])
-@login_required
-def logout():
-    logout_user()
-    return jsonify({"success": True, "message": "Déconnexion réussie"})
-
-@app.route('/inventory')
-@login_required
-def inventory():
-    if not current_user.active_character_id:
-        return jsonify({
-            "success": False, 
-            "message": "Aucun personnage actif", 
-            "redirect": "/game/character_list"
-        }), 400
-
-    sort_by = request.args.get('sort_by', 'item_name')
-    order = request.args.get('order', 'asc')
-
-    valid_columns = {'item_name', 'item_type', 'item_quantity'}
-    valid_order = {'asc', 'desc'}
-    if sort_by not in valid_columns:
-        sort_by = 'item_name'
-    if order not in valid_order:
-        order = 'asc'
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Récupérer les informations du personnage actif
-    cursor.execute('SELECT name FROM characters WHERE id = ?', (current_user.active_character_id,))
-    character = cursor.fetchone()
-
-    query = f'''
-        SELECT inventory.id AS item_id, inventory.name AS item_name, 
-               item_types.type_name AS item_type, inventory.quantity AS item_quantity 
-        FROM inventory 
-        JOIN item_types ON inventory.type_id = item_types.id 
-        WHERE inventory.character_id = ?
-        ORDER BY {sort_by} {order}
-    '''
-    cursor.execute(query, (current_user.active_character_id,))
-    items_data = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
-    # Convertir les résultats en liste de dictionnaires pour JSON
-    items = []
-    for item in items_data:
-        items.append({
-            "id": item['item_id'],
-            "name": item['item_name'],
-            "type": item['item_type'],
-            "quantity": item['item_quantity']
-        })
-
-    return jsonify({
-        "success": True,
-        "character_name": character['name'] if character else None,
-        "items": items,
-        "sort_by": sort_by,
-        "order": order
-    })
-
-
 @app.route('/add_item', methods=['POST'])
 @login_required
 def add_item():
@@ -483,6 +326,179 @@ def edit_item(item_id):
             cursor.close()
             conn.close()
             return jsonify({"success": False, "message": f"Erreur: {str(e)}"}), 500
+
+@app.route('/login', methods=['POST'])
+def api_login():
+    """
+    Point d'entrée pour l'API de connexion React
+    """
+    if not request.is_json:
+        return jsonify({"error": "Le corps de la requête doit être au format JSON"}), 400
+    
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+    
+    if not email or not password:
+        return jsonify({"error": "Email et mot de passe requis"}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM user WHERE user_mail = ?', (email,))
+    user_data = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if user_data and bcrypt.check_password_hash(user_data['user_password'], password):
+        user = User(
+            user_data['user_id'], 
+            user_data['user_login'], 
+            user_data['user_mail'],
+            user_data['active_character_id']
+        )
+        login_user(user)
+        return jsonify({
+            "success": True,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "active_character_id": user.active_character_id
+            }
+        })
+    
+    return jsonify({"error": "Email ou mot de passe incorrect"}), 401
+
+
+@app.route('/register', methods=['POST'])
+def api_register():
+    """
+    Point d'entrée pour l'API d'inscription React
+    """
+    if not request.is_json:
+        return jsonify({"error": "Le corps de la requête doit être au format JSON"}), 400
+    
+    data = request.get_json()
+    email = data.get('email')
+    username = data.get('username')
+    password = data.get('password')
+    recheck_password = data.get('recheck_password')
+    
+    if not email or not username or not password or not recheck_password:
+        return jsonify({"error": "Tous les champs sont obligatoires"}), 400
+    
+    if password != recheck_password:
+        return jsonify({"error": "Les mots de passe ne correspondent pas"}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM user WHERE user_mail = ?', (email,))
+    account = cursor.fetchone()
+    
+    if account:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Cet email est déjà utilisé"}), 400
+    
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    
+    cursor.execute(
+        'INSERT INTO user (user_login, user_password, user_mail) VALUES (?, ?, ?)',
+        (username, hashed_password, email)
+    )
+    conn.commit()
+    user_id = cursor.lastrowid
+    
+    cursor.close()
+    conn.close()
+    
+    user = User(user_id, username, email)
+    login_user(user)
+    
+    return jsonify({
+        "success": True,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        }
+    })
+
+
+@app.route('/logout', methods=['POST'])
+@login_required
+def api_logout():
+    """
+    Point d'entrée pour l'API de déconnexion
+    """
+    logout_user()
+    return jsonify({"success": True})
+
+
+@app.route('/user', methods=['GET'])
+@login_required
+def get_user_info():
+    """
+    Récupérer les informations de l'utilisateur connecté
+    """
+    user_data = {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "active_character_id": current_user.active_character_id
+    }
+    return jsonify(user_data)
+
+
+@app.route('/api/inventory', methods=['GET'])
+@login_required
+def get_inventory():
+    """
+    Récupérer l'inventaire du personnage actif pour l'API React
+    """
+    if not current_user.active_character_id:
+        return jsonify({'error': 'Aucun personnage actif'}), 400
+    
+    sort_by = request.args.get('sort_by', 'item_name')
+    order = request.args.get('order', 'asc')
+    
+    valid_columns = {'item_name', 'item_type', 'item_quantity'}
+    valid_order = {'asc', 'desc'}
+    if sort_by not in valid_columns:
+        sort_by = 'item_name'
+    if order not in valid_order:
+        order = 'asc'
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    query = f'''
+        SELECT inventory.id AS item_id, inventory.name AS item_name, 
+               item_types.type_name AS item_type, inventory.quantity AS item_quantity,
+               item_types.id AS type_id
+        FROM inventory 
+        JOIN item_types ON inventory.type_id = item_types.id 
+        WHERE inventory.character_id = ?
+        ORDER BY {sort_by} {order}
+    '''
+    cursor.execute(query, (current_user.active_character_id,))
+    items = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    inventory_data = []
+    for item in items:
+        inventory_data.append({
+            'id': item['item_id'],
+            'name': item['item_name'],
+            'type': item['item_type'],
+            'type_id': item['type_id'],
+            'quantity': item['item_quantity'],
+            'consumable': item['item_type'] in ['potion', 'plante']
+        })
+    
+    return jsonify(inventory_data)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
