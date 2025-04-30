@@ -376,6 +376,7 @@ def api_register():
     Point d'entrée pour l'API d'inscription React
     """
     if not request.is_json:
+        print("JSONERROR")
         return jsonify({"error": "Le corps de la requête doit être au format JSON"}), 400
     
     data = request.get_json()
@@ -385,9 +386,11 @@ def api_register():
     recheck_password = data.get('recheck_password')
     
     if not email or not username or not password or not recheck_password:
+        print("CHAMPSERROR")
         return jsonify({"error": "Tous les champs sont obligatoires"}), 400
     
     if password != recheck_password:
+        print("PASSWORDERROR")
         return jsonify({"error": "Les mots de passe ne correspondent pas"}), 400
     
     conn = get_db_connection()
@@ -398,6 +401,7 @@ def api_register():
     if account:
         cursor.close()
         conn.close()
+        print("EMAILERROR")
         return jsonify({"error": "Cet email est déjà utilisé"}), 400
     
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -415,6 +419,7 @@ def api_register():
     user = User(user_id, username, email)
     login_user(user)
     
+    print("SUCCESS")
     return jsonify({
         "success": True,
         "user": {
