@@ -1,11 +1,11 @@
 import os
 import logging
 from logging.handlers import RotatingFileHandler
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, redirect, url_for
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
-from flask_login import LoginManager
-
+from flask_login import LoginManager, current_user
+from datetime import datetime, timedelta
 from init_db import get_db_connection, init_db
 from models.user import User
 
@@ -29,11 +29,17 @@ def setup_logging(app):
     app.logger.info('Application startup')
 
 # Création et configuration de l'application
+# Dans app.py, ajoute ces configurations
 def create_app():
     app = Flask(__name__)
     app.config.from_object('config.Config')
     
-    # Configuration CORS globale mise à jour pour autoriser les credentials
+    # Configuration supplémentaire pour les sessions
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Requis pour les requêtes cross-origin
+    app.config['SESSION_COOKIE_SECURE'] = True  # Recommandé pour la sécurité
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Session plus longue
+    
+    # Configuration CORS mise à jour
     CORS(app, 
          resources={
              r"/*": {
@@ -45,11 +51,18 @@ def create_app():
              }
          })
     
-    # Ajouter un hook pour s'assurer que les entêtes CORS sont bien présents
+    # Hook pour les entêtes CORS
     @app.after_request
     def after_request(response):
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        
+        # Important: Corriger l'entête Access-Control-Allow-Origin pour les credentials
+        # Ne pas utiliser '*' avec credentials, spécifier l'origine exacte
+        origin = request.headers.get('Origin')
+        if origin in ["http://localhost:4200", "http://localhost:3000", "http://127.0.0.1:4200"]:
+            response.headers.set('Access-Control-Allow-Origin', origin)
+        
         return response
     
     # Initialisation des extensions
@@ -58,6 +71,14 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     
+    # Personnaliser le gestionnaire d'unauthorised pour l'API
+    @login_manager.unauthorized_handler
+    def unauthorized_handler():
+        return jsonify({
+            "success": False,
+            "message": "Authentification requise"
+        }), 401
+       
     # Configuration des blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(game_bp, url_prefix='/game')
