@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS characters (
     FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE
 );
 
+-- Création de la table des races
+CREATE TABLE IF NOT EXISTS races (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    health_bonus INTEGER DEFAULT 0,
+    attack_bonus INTEGER DEFAULT 0,
+    defense_bonus INTEGER DEFAULT 0
+);
+
+
 -- Table d'inventaire des personnages
 CREATE TABLE IF NOT EXISTS inventory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,3 +176,12 @@ INSERT OR IGNORE INTO quest_rewards (quest_id, name, type_id, quantity) VALUES
 (2, 'Armure de troll', 2, 1),     -- 1 armure pour la quête 2
 (3, 'Épée de dragon', 1, 1),      -- 1 arme pour la quête 3
 (3, 'Écaille de dragon', 4, 5);   -- 5 matériaux pour la quête 3
+
+
+-- Insertion des races de base
+INSERT INTO races (name, description, health_bonus, attack_bonus, defense_bonus) VALUES
+('Human', 'Versatile and adaptable, humans receive balanced bonuses to all stats', 5, 5, 5),
+('Elf', 'Graceful and agile, elves excel in precision attacks', 0, 10, 5),
+('Dwarf', 'Sturdy and resilient, dwarves have superior defense', 10, 0, 15),
+('Orc', 'Fierce warriors with tremendous strength', 5, 15, 0),
+('Halfling', 'Small but nimble, halflings are difficult to hit', 0, 5, 10);

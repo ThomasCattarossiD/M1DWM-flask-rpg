@@ -30,13 +30,6 @@ def init_db():
         cursor.executescript(f.read().decode('utf8'))
     
     # Insertion des données initiales
-    cursor.executescript('''
-        -- Types d'objets
-        INSERT INTO item_types (type_name) VALUES 
-        ('weapon'), ('armor'), ('potion'), ('plante'), ('material');
-        
-        -- Ajouter d'autres données initiales si nécessaire
-    ''')
     
     conn.commit()
     cursor.close()

@@ -19,3 +19,5 @@
 2025-05-05 11:36:37,824 ERROR: Error fetching character details: 'sqlite3.Row' object has no attribute 'get' [in C:\Users\march\Desktop\project\M1DWM-flask-rpg\routes\api_routes.py:611]
 2025-05-05 11:36:41,124 ERROR: Error fetching character details: 'sqlite3.Row' object has no attribute 'get' [in C:\Users\march\Desktop\project\M1DWM-flask-rpg\routes\api_routes.py:611]
 2025-05-05 11:39:19,743 INFO: Application startup [in C:\Users\march\Desktop\project\M1DWM-flask-rpg\app.py:29]
+2025-05-05 14:15:56,069 INFO: Application startup [in /home/thomas/Documents/projetDevWebS2/M1DWM-flask-rpg/app.py:29]
+2025-05-05 14:15:56,381 INFO: Application startup [in /home/thomas/Documents/projetDevWebS2/M1DWM-flask-rpg/app.py:29]

@@ -403,24 +403,17 @@ def create_character():
     try:
         data = request.get_json()
         name = data.get('name')
-        race = data.get('race')
+        race_id = data.get('race_id')  # Changé pour utiliser l'ID de race
         character_class = data.get('class')
         
-        if not name or not race or not character_class:
+        if not name or not race_id or not character_class:
             return jsonify({
                 "success": False,
                 "message": "Tous les champs sont obligatoires"
             }), 400
             
-        # Valider la race et la classe
-        valid_races = [r.name.lower() for r in Race]
+        # Valider la classe
         valid_classes = ['warrior', 'mage']
-        
-        if race.lower() not in valid_races:
-            return jsonify({
-                "success": False,
-                "message": f"Race invalide. Valeurs possibles: {', '.join(valid_races)}"
-            }), 400
             
         if character_class.lower() not in valid_classes:
             return jsonify({
@@ -428,25 +421,44 @@ def create_character():
                 "message": f"Classe invalide. Valeurs possibles: {', '.join(valid_classes)}"
             }), 400
         
-        # Créer l'instance du personnage
-        if character_class.lower() == 'warrior':
-            character = Warrior(name=name, race=Race[race.upper()])
-        elif character_class.lower() == 'mage':
-            character = Mage(name=name, race=Race[race.upper()])
-        
-        # Sauvegarder dans la base de données
+        # Récupérer les informations de race
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        cursor.execute('SELECT * FROM races WHERE id = ?', (race_id,))
+        race_data = cursor.fetchone()
+        
+        if not race_data:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": f"Race introuvable avec l'ID: {race_id}"
+            }), 400
+        
+        # Créer l'instance du personnage avec les bonus de race
+        base_health = 100 + race_data['health_bonus']
+        base_attack = 10 + race_data['attack_bonus']
+        base_defense = 5 + race_data['defense_bonus']
+        
+        if character_class.lower() == 'warrior':
+            # Les guerriers ont plus de santé et de défense
+            health = base_health + 20
+            attack = base_attack + 5
+            defense = base_defense + 10
+        elif character_class.lower() == 'mage':
+            # Les mages ont plus d'attaque
+            health = base_health
+            attack = base_attack + 15
+            defense = base_defense
+        
+        # Sauvegarder dans la base de données
         cursor.execute('''
-            INSERT INTO characters (name, race, class, health, attack, defense, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (character.name, character.race.name, character.type,
-              character.health, character.attack, character.defense,
-              current_user.id))
+            INSERT INTO characters (name, race, class, health, attack, defense, user_id, level, experience)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+        ''', (name, race_data['name'], character_class, health, attack, defense, current_user.id))
         
         character_id = cursor.lastrowid
-        character.id = character_id
         
         # Créer les statistiques du joueur
         cursor.execute('''
@@ -490,16 +502,16 @@ def create_character():
             "success": True,
             "message": "Personnage créé avec succès",
             "character": {
-                "id": character.id,
-                "name": character.name,
-                "race": character.race.name,
-                "class": character.type,
-                "health": character.health,
-                "attack": character.attack,
-                "defense": character.defense,
+                "id": character_id,
+                "name": name,
+                "race": race_data['name'],
+                "class": character_class,
+                "health": health,
+                "attack": attack,
+                "defense": defense,
                 "level": 1,
                 "experience": 0,
-                "is_active": current_user.active_character_id == character.id
+                "is_active": current_user.active_character_id == character_id
             }
         }), 201
         
@@ -510,7 +522,9 @@ def create_character():
             "message": f"Erreur serveur: {str(e)}"
         }), 500
 
-@api_bp.route('/character/<int:character_id>', methods=['GET', 'OPTIONS'])
+
+# Corriger la route pour récupérer un personnage spécifique
+@api_bp.route('/characters/<int:character_id>', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @login_required
 def get_character(character_id):
@@ -544,6 +558,13 @@ def get_character(character_id):
                 "message": "Personnage non trouvé ou accès non autorisé"
             }), 404
         
+        # Récupérer la race et la classe
+        cursor.execute('SELECT * FROM races WHERE id = ?', (character_data['race'],))
+        race_data = cursor.fetchone()
+        
+        cursor.execute('SELECT * FROM classes WHERE id = ?', (character_data['class'],))
+        class_data = cursor.fetchone()
+        
         # Récupérer l'inventaire du personnage
         cursor.execute('''
             SELECT i.id, i.name, i.quantity, i.description, t.id as type_id, t.type_name
@@ -562,6 +583,9 @@ def get_character(character_id):
         
         stats_data = cursor.fetchone()
         
+        # Calculer l'expérience nécessaire pour le niveau suivant
+        next_level_exp = character_data['level'] * 100  # Formule simple pour l'exemple
+        
         cursor.close()
         conn.close()
         
@@ -569,14 +593,22 @@ def get_character(character_id):
         character = {
             'id': character_data['id'],
             'name': character_data['name'],
-            'race': character_data['race'],
-            'class': character_data['class'],
+            'race': {
+                'id': race_data['id'],
+                'name': race_data['name']
+            },
+            'class': {
+                'id': class_data['id'],
+                'name': class_data['name']
+            },
             'health': character_data['health'],
             'attack': character_data['attack'],
             'defense': character_data['defense'],
             'level': character_data['level'],
             'experience': character_data['experience'],
-            'is_active': character_data['id'] == character_data['active_character_id']
+            'next_level_exp': next_level_exp,
+            'is_active': character_data['id'] == character_data['active_character_id'],
+            'avatar_url': character_data.get('avatar_url', None)
         }
         
         # Préparer les données de l'inventaire
@@ -591,7 +623,7 @@ def get_character(character_id):
                 'description': item['description'] or ""
             })
         
-        # Préparer les statistiques - ici se trouve probablement le problème
+        # Préparer les statistiques
         stats = {}
         if stats_data:
             # Conversion en dictionnaire standard
@@ -626,11 +658,13 @@ def get_character(character_id):
             "success": False,
             "message": f"Erreur serveur: {str(e)}"
         }), 500
-    
-@api_bp.route('/character/<int:character_id>/select', methods=['POST', 'OPTIONS'])
+
+
+# Corriger la route pour sélectionner un personnage actif
+@api_bp.route('/characters/<int:character_id>/active', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @login_required
-def select_character(character_id):
+def set_active_character(character_id):
     """
     Définit un personnage comme personnage actif
     """
@@ -685,6 +719,51 @@ def select_character(character_id):
             "success": False,
             "message": f"Erreur serveur: {str(e)}"
         }), 500
+
+@api_bp.route('/races', methods=['GET', 'OPTIONS'])
+@cross_origin()
+def get_races():
+    """
+    Récupère la liste des races disponibles
+    """
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        return response, 200
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM races ORDER BY name')
+        races_data = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        races = []
+        for race in races_data:
+            races.append({
+                'id': race['id'],
+                'name': race['name'],
+                'description': race['description'],
+                'health_bonus': race['health_bonus'],
+                'attack_bonus': race['attack_bonus'],
+                'defense_bonus': race['defense_bonus']
+            })
+        
+        return jsonify({
+            "success": True,
+            "races": races
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error fetching races: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Erreur serveur: {str(e)}"
+        }), 500
+
 
 @api_bp.route('/quests', methods=['GET', 'OPTIONS'])
 @cross_origin()
