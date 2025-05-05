@@ -560,7 +560,7 @@ def get_character(character_id):
             WHERE character_id = ?
         ''', (character_id,))
         
-        stats_data = cursor.fetchone() or {}
+        stats_data = cursor.fetchone()
         
         cursor.close()
         conn.close()
@@ -591,14 +591,27 @@ def get_character(character_id):
                 'description': item['description'] or ""
             })
         
-        # Préparer les statistiques
-        stats = {
-            'battles_won': stats_data.get('battles_won', 0),
-            'battles_lost': stats_data.get('battles_lost', 0),
-            'monsters_defeated': stats_data.get('monsters_defeated', 0),
-            'quests_completed': stats_data.get('quests_completed', 0),
-            'items_collected': stats_data.get('items_collected', 0)
-        }
+        # Préparer les statistiques - ici se trouve probablement le problème
+        stats = {}
+        if stats_data:
+            # Conversion en dictionnaire standard
+            stats_dict = dict(stats_data)
+            stats = {
+                'battles_won': stats_dict.get('battles_won', 0),
+                'battles_lost': stats_dict.get('battles_lost', 0),
+                'monsters_defeated': stats_dict.get('monsters_defeated', 0),
+                'quests_completed': stats_dict.get('quests_completed', 0),
+                'items_collected': stats_dict.get('items_collected', 0)
+            }
+        else:
+            # Valeurs par défaut si aucune statistique n'est trouvée
+            stats = {
+                'battles_won': 0,
+                'battles_lost': 0,
+                'monsters_defeated': 0,
+                'quests_completed': 0,
+                'items_collected': 0
+            }
         
         return jsonify({
             "success": True,
@@ -613,7 +626,7 @@ def get_character(character_id):
             "success": False,
             "message": f"Erreur serveur: {str(e)}"
         }), 500
-
+    
 @api_bp.route('/character/<int:character_id>/select', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @login_required
