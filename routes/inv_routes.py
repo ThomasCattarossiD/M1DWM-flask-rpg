@@ -5,9 +5,9 @@ import sqlite3
 
 from init_db import get_db_connection
 
-inventory_bp = Blueprint('inv', __name__)
+inv_bp = Blueprint('inv', __name__)
 
-@inventory_bp.route('/api/inventory', methods=['GET', 'OPTIONS'])
+@inv_bp.route('/api/inventory', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @login_required
 def get_inventory():
@@ -73,7 +73,7 @@ def get_inventory():
             "message": f"Erreur lors de la récupération de l'inventaire: {str(e)}"
         }), 500
 
-@inventory_bp.route('/api/inventory', methods=['POST', 'OPTIONS'])
+@inv_bp.route('/api/inventory', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @login_required
 def add_item():
@@ -196,7 +196,7 @@ def add_item():
             "message": f"Erreur lors de l'ajout de l'objet: {str(e)}"
         }), 500
 
-@inventory_bp.route('/api/inventory/<int:item_id>', methods=['PUT', 'OPTIONS'])
+@inv_bp.route('/api/inventory/<int:item_id>', methods=['PUT', 'OPTIONS'])
 @cross_origin()
 @login_required
 def update_item(item_id):
@@ -329,7 +329,7 @@ def update_item(item_id):
             "message": f"Erreur lors de la mise à jour de l'objet: {str(e)}"
         }), 500
 
-@inventory_bp.route('/api/inventory/<int:item_id>', methods=['DELETE', 'OPTIONS'])
+@inv_bp.route('/api/inventory/<int:item_id>', methods=['DELETE', 'OPTIONS'])
 @cross_origin()
 @login_required
 def delete_item(item_id):
@@ -391,7 +391,7 @@ def delete_item(item_id):
             "message": f"Erreur lors de la suppression de l'objet: {str(e)}"
         }), 500
 
-@inventory_bp.route('/api/inventory/<int:item_id>/use', methods=['POST', 'OPTIONS'])
+@inv_bp.route('/api/inventory/<int:item_id>/use', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @login_required
 def use_item(item_id):
@@ -546,7 +546,7 @@ def use_item(item_id):
             "message": f"Erreur lors de l'utilisation de l'objet: {str(e)}"
         }), 500
 
-@inventory_bp.route('/api/items', methods=['GET', 'OPTIONS'])
+@inv_bp.route('/api/items', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @login_required
 def get_item_types():

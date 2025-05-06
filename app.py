@@ -14,6 +14,7 @@ from routes.auth_routes import auth_bp
 from routes.game_routes import game_bp
 from routes.inventory_routes import inventory_bp
 from routes.api_routes import api_bp
+from routes.inv_routes import inv_bp
 
 # Configuration du logging
 def setup_logging(app):
@@ -84,6 +85,7 @@ def create_app():
     app.register_blueprint(game_bp, url_prefix='/game')
     app.register_blueprint(inventory_bp, url_prefix='/inventory')
     app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(inv_bp, url_prefix='/inv')
     
     # Initialisation de la base de données
     with app.app_context():
