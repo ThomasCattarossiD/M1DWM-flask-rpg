@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from flask_cors import cross_origin
 import json
 from datetime import datetime
+import sqlite3
 
 from init_db import get_db_connection
 from models.game import Character, Monster, Race, Warrior, Mage
@@ -523,7 +524,6 @@ def create_character():
         }), 500
 
 
-# Corriger la route pour récupérer un personnage spécifique
 @api_bp.route('/characters/<int:character_id>', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @login_required
@@ -538,13 +538,15 @@ def get_character(character_id):
     
     try:
         conn = get_db_connection()
+        conn.row_factory = sqlite3.Row  # Configurer pour obtenir des résultats comme dict-like objects
         cursor = conn.cursor()
         
-        # Vérifier que le personnage appartient à l'utilisateur
+        # Vérifier que le personnage appartient bien à l'utilisateur connecté
         cursor.execute('''
-            SELECT c.*, u.active_character_id 
+            SELECT c.*, r.name as race_name, r.description as race_description, 
+                   r.health_bonus, r.attack_bonus, r.defense_bonus
             FROM characters c
-            JOIN user u ON c.user_id = u.user_id
+            JOIN races r ON c.race = r.name
             WHERE c.id = ? AND c.user_id = ?
         ''', (character_id, current_user.id))
         
@@ -554,110 +556,164 @@ def get_character(character_id):
             cursor.close()
             conn.close()
             return jsonify({
-                "success": False,
-                "message": "Personnage non trouvé ou accès non autorisé"
+                'success': False,
+                'message': 'Personnage non trouvé ou non autorisé'
             }), 404
         
-        # Récupérer la race et la classe
-        cursor.execute('SELECT * FROM races WHERE id = ?', (character_data['race'],))
-        race_data = cursor.fetchone()
-        
-        cursor.execute('SELECT * FROM classes WHERE id = ?', (character_data['class'],))
-        class_data = cursor.fetchone()
+        # Convertir l'objet Row en dictionnaire
+        character_dict = dict(character_data)
         
         # Récupérer l'inventaire du personnage
         cursor.execute('''
-            SELECT i.id, i.name, i.quantity, i.description, t.id as type_id, t.type_name
+            SELECT i.*, it.type_name
             FROM inventory i
-            JOIN item_types t ON i.type_id = t.id
+            JOIN item_types it ON i.type_id = it.id
             WHERE i.character_id = ?
         ''', (character_id,))
         
-        inventory_items = cursor.fetchall()
+        inventory_data = [dict(row) for row in cursor.fetchall()]
         
-        # Récupérer les statistiques du personnage
+        # Récupérer les objets équipés
         cursor.execute('''
-            SELECT * FROM player_stats
+            SELECT ei.slot, i.*, it.type_name
+            FROM equipped_items ei
+            JOIN inventory i ON ei.inventory_id = i.id
+            JOIN item_types it ON i.type_id = it.id
+            WHERE ei.character_id = ?
+        ''', (character_id,))
+        
+        equipped_data = [dict(row) for row in cursor.fetchall()]
+        
+        # Récupérer les statistiques du joueur
+        cursor.execute('''
+            SELECT *
+            FROM player_stats
             WHERE character_id = ?
         ''', (character_id,))
         
-        stats_data = cursor.fetchone()
+        stats_row = cursor.fetchone()
+        stats_data = dict(stats_row) if stats_row else None
         
-        # Calculer l'expérience nécessaire pour le niveau suivant
-        next_level_exp = character_data['level'] * 100  # Formule simple pour l'exemple
+        # Récupérer les quêtes complétées
+        cursor.execute('''
+            SELECT q.id, q.title, q.description, cq.completed_at
+            FROM completed_quests cq
+            JOIN quests q ON cq.quest_id = q.id
+            WHERE cq.character_id = ?
+        ''', (character_id,))
         
-        cursor.close()
-        conn.close()
+        completed_quests_data = [dict(row) for row in cursor.fetchall()]
         
-        # Préparer les données du personnage
-        character = {
-            'id': character_data['id'],
-            'name': character_data['name'],
-            'race': {
-                'id': race_data['id'],
-                'name': race_data['name']
+        # Définition des classes disponibles (puisque pas de table classes)
+        character_classes = {
+            'warrior': {
+                'name': 'Guerrier',
+                'description': 'Les guerriers excellent au combat rapproché et possèdent une meilleure défense et endurance.',
+                'bonuses': {
+                    'health': 20,
+                    'attack': 5,
+                    'defense': 10
+                }
             },
-            'class': {
-                'id': class_data['id'],
-                'name': class_data['name']
-            },
-            'health': character_data['health'],
-            'attack': character_data['attack'],
-            'defense': character_data['defense'],
-            'level': character_data['level'],
-            'experience': character_data['experience'],
-            'next_level_exp': next_level_exp,
-            'is_active': character_data['id'] == character_data['active_character_id'],
-            'avatar_url': character_data.get('avatar_url', None)
+            'mage': {
+                'name': 'Mage',
+                'description': 'Les mages maîtrisent les arts mystiques et peuvent infliger de lourds dégâts à distance.',
+                'bonuses': {
+                    'health': 0,
+                    'attack': 15,
+                    'defense': 0
+                }
+            }
         }
         
-        # Préparer les données de l'inventaire
-        inventory = []
-        for item in inventory_items:
-            inventory.append({
+        # Récupérer les informations de classe
+        character_class = character_dict['class']
+        print(character_dict)
+        class_info = character_classes.get(character_class, {
+            'name': character_class.capitalize(),
+            'description': f"Classe de type {character_class}",
+            'bonuses': {'health': 0, 'attack': 0, 'defense': 0}
+        })
+        
+        # Préparer les objets équipés par slot
+        equipped_items = {}
+        for item in equipped_data:
+            equipped_items[item['slot']] = {
                 'id': item['id'],
                 'name': item['name'],
-                'type_id': item['type_id'],
                 'type': item['type_name'],
-                'quantity': item['quantity'],
-                'description': item['description'] or ""
-            })
-        
-        # Préparer les statistiques
-        stats = {}
-        if stats_data:
-            # Conversion en dictionnaire standard
-            stats_dict = dict(stats_data)
-            stats = {
-                'battles_won': stats_dict.get('battles_won', 0),
-                'battles_lost': stats_dict.get('battles_lost', 0),
-                'monsters_defeated': stats_dict.get('monsters_defeated', 0),
-                'quests_completed': stats_dict.get('quests_completed', 0),
-                'items_collected': stats_dict.get('items_collected', 0)
+                'type_id': item['type_id'],
+                'description': item['description'],
+                'quantity': item['quantity']
             }
-        else:
-            # Valeurs par défaut si aucune statistique n'est trouvée
-            stats = {
+        
+        # Construire l'objet de réponse
+        character = {
+            'id': character_dict['id'],
+            'name': character_dict['name'],
+            'level': character_dict['level'],
+            'experience': character_dict['experience'],
+            'health': character_dict['health'],
+            'attack': character_dict['attack'],
+            'defense': character_dict['defense'],
+            'class': character_class,
+            'class_info': class_info,
+            'race': {
+                'name': character_dict['race_name'],
+                'description': character_dict['race_description'],
+                'health_bonus': character_dict['health_bonus'],
+                'attack_bonus': character_dict['attack_bonus'],
+                'defense_bonus': character_dict['defense_bonus']
+            },
+            'created_at': character_dict['created_at'],
+            'is_active': current_user.active_character_id == character_id,
+            'inventory': [
+                {
+                    'id': item['id'],
+                    'name': item['name'],
+                    'type': item['type_name'],
+                    'type_id': item['type_id'],
+                    'description': item['description'],
+                    'quantity': item['quantity'],
+                    'added_at': item['added_at']
+                }
+                for item in inventory_data
+            ],
+            'equipped_items': equipped_items,
+            'stats': stats_data if stats_data else {
                 'battles_won': 0,
                 'battles_lost': 0,
                 'monsters_defeated': 0,
                 'quests_completed': 0,
                 'items_collected': 0
-            }
+            },
+            'completed_quests': [
+                {
+                    'id': quest['id'],
+                    'title': quest['title'],
+                    'description': quest['description'],
+                    'completed_at': quest['completed_at']
+                }
+                for quest in completed_quests_data
+            ]
+        }
+        
+        cursor.close()
+        conn.close()
         
         return jsonify({
-            "success": True,
-            "character": character,
-            "inventory": inventory,
-            "stats": stats
-        }), 200
+            'success': True,
+            'character': character
+        })
         
     except Exception as e:
-        current_app.logger.error(f"Error fetching character details: {str(e)}")
+        print(f"Erreur lors de la récupération du personnage: {e}")
         return jsonify({
-            "success": False,
-            "message": f"Erreur serveur: {str(e)}"
+            'success': False,
+            'message': f'Une erreur est survenue lors de la récupération du personnage: {str(e)}'
         }), 500
+
+
 
 
 # Corriger la route pour sélectionner un personnage actif
