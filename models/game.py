@@ -66,27 +66,91 @@ class Character:
 
 class Warrior(Character):
     def __init__(self, name, race, id=None):
+        # Stats de base
+        base_health = 100
+        base_attack = 10
+        base_defense = 10
+        
+        # Modificateurs de race
+        if race == Race.HUMAN:
+            base_health += 10
+            base_attack += 5
+            base_defense += 5
+        elif race == Race.VAMPIRE:
+            base_health -= 10
+            base_attack += 15
+            base_defense -= 5
+        elif race == Race.WEREWOLF:
+            base_health += 20
+            base_attack -= 5
+            base_defense += 10
+            
+        # Modificateurs de classe
+        base_health += 15
+        base_attack += 5
+        base_defense += 10
+        
+        # Assurer les minimums
+        base_health = max(base_health, 50)
+        base_attack = max(base_attack, 5)
+        base_defense = max(base_defense, 0)
+        
+        # Limiter les PV à 100 maximum
+        base_health = min(base_health, 100)
+        
         super().__init__(
             id=id,
             name=name,
             race=race,
             character_type='warrior',
-            health=100,
-            attack=15,
-            defense=10
+            health=base_health,
+            attack=base_attack,
+            defense=base_defense
         )
 
 
 class Mage(Character):
     def __init__(self, name, race, id=None):
+        # Stats de base
+        base_health = 100
+        base_attack = 10
+        base_defense = 10
+        
+        # Modificateurs de race
+        if race == Race.HUMAN:
+            base_health += 10
+            base_attack += 5
+            base_defense += 5
+        elif race == Race.VAMPIRE:
+            base_health -= 10
+            base_attack += 15
+            base_defense -= 5
+        elif race == Race.WEREWOLF:
+            base_health += 20
+            base_attack -= 5
+            base_defense += 10
+            
+        # Modificateurs de classe
+        base_health -= 15
+        base_attack += 15
+        base_defense -= 5
+        
+        # Assurer les minimums
+        base_health = max(base_health, 50)
+        base_attack = max(base_attack, 5)
+        base_defense = max(base_defense, 0)
+        
+        # Limiter les PV à 100 maximum
+        base_health = min(base_health, 100)
+        
         super().__init__(
             id=id,
             name=name,
             race=race,
             character_type='mage',
-            health=80,
-            attack=20,
-            defense=5
+            health=base_health,
+            attack=base_attack,
+            defense=base_defense
         )
 
 
@@ -122,24 +186,24 @@ class Monster:
 class Tableau:
     def __init__(self, hero, length=20):
         """
-        Initiali    ze the tableau game
-        :param hero: The hero playing the game
-        :param length: Length of the tableau (default 20)
+        Initialise le jeu de plateau
+        :param hero: Le héros qui joue
+        :param length: Longueur du plateau (par défaut 20)
         """
         self.hero = hero
         self.length = length
         self.board = self._generate_board()
-        self.current_position = 0
+        self.current_position = 1
         self.is_completed = False
         self.is_game_over = False
 
     def _generate_board(self):
         """
-        Generate a board with random elements
-        Possible elements:
-        - None (empty space)
-        - Item
-        - Enemy
+        Génère un plateau avec des éléments aléatoires
+        Éléments possibles:
+        - None (case vide)
+        - Item (objet)
+        - Enemy (ennemi)
         """
         board = []
         for _ in range(self.length):
@@ -151,92 +215,172 @@ class Tableau:
             if element_type == 'empty':
                 board.append(None)
             elif element_type == 'item':
-                # Generate a random item from hero's possible items
-                potion = Item("potion", "healing", "+10 hp")
-                sword = Item("sword", "weapon", "+10 atk")
-                shield = Item("shield", "armor", "+10 def")
-                possible_items = [potion, sword, shield]  # Add more item types as needed
+                # Générer un objet aléatoire
+                potion = Item("Potion de soins", "healing", "+10 pv")
+                epee = Item("Épée rouillée", "weapon", "+5 att")
+                bouclier = Item("Bouclier en bois", "armor", "+5 def")
+                possible_items = [potion, epee, bouclier]
                 board.append(random.choice(possible_items))
             elif element_type == 'enemy':
-                # Generate a random enemy
-                enemy_races = ["orc", "creature", "undead"]
+                # Générer un ennemi aléatoire
+                enemy_races = ["Gobelin", "Squelette", "Zombie", "Bandit"]
                 enemy = Monster(
-                    random.choice(enemy_races) + 'at pos' + str(len(board)),
-                    random.randint(0, 10),
-                    random.randint(0, 10)
+                    random.choice(enemy_races),
+                    random.randint(30, 50),
+                    random.randint(5, 15)
                 )
                 board.append(enemy)
 
         return board
 
     def play_turn(self):
-        """
-        Play a single turn in the tableau
-        Returns output of the turn
-        """
+        """Joue un tour sur le plateau"""
         output = ""
         dice_roll = random.randint(1, 6)
-        output += f"{self.hero.name} rolls {dice_roll}\n"
+        output += f"{self.hero.name} lance {dice_roll}\n"
 
-        # Move hero
-        self.current_position += dice_roll
-        output += f"{self.hero.name} moves to position {self.current_position}\n"
+        # Déplacer le héros sans dépasser la longueur du plateau
+        new_position = min(self.current_position + dice_roll, self.length)
+        output += f"{self.hero.name} se déplace à la position {new_position}\n"
+        self.current_position = new_position
 
-        # Check if hero has gone past the board
+        # Vérifier si le héros a atteint la fin du plateau
         if self.current_position >= self.length:
-            output += f"{self.hero.name} completed the tableau!\n"
+            output += f"{self.hero.name} a complété le plateau !\n"
             self.is_completed = True
-            # Add XP or other completion logic here
             return output
 
-        # Check current board element
+        # Vérifier l'élément actuel du plateau
         current_element = self.board[self.current_position]
 
         if current_element is None:
-            output += "Nothing happened. The space is empty.\n"
+            output += "Rien ne s'est passé. La case est vide.\n"
         elif isinstance(current_element, Item):
-            output += f"{self.hero.name} found an item: {current_element.name}\n"
-            # Assuming hero has a method to add items
-            self.board[self.current_position] = None  # Remove item after picking up
+            output += f"{self.hero.name} a trouvé un objet : {current_element.name}\n"
+            # Ajouter l'objet à l'inventaire du personnage
+            try:
+                self._add_item_to_inventory(current_element)
+                output += f"L'objet {current_element.name} a été ajouté à votre inventaire.\n"
+            except Exception as e:
+                output += f"Impossible d'ajouter l'objet à l'inventaire : {str(e)}\n"
+            
+            # Supprimer l'objet du plateau après l'avoir ramassé
+            self.board[self.current_position] = None
         elif isinstance(current_element, Monster):
-            output += f"Enemy encountered: {current_element.name}\n"
-            # Implement battle logic
+            output += f"Ennemi rencontré : {current_element.name}\n"
+            # Logique de combat
             battle_result = self.battle(current_element)
             output += battle_result
 
-        # Check if hero died in battle
+        # Vérifier si le héros est mort au combat
         if self.hero.health <= 0:
-            output += f"{self.hero.name} died. Game Over!\n"
+            output += f"{self.hero.name} est mort. Fin de partie !\n"
             self.is_game_over = True
 
         return output
+    
+    def _add_item_to_inventory(self, item):
+        """
+        Ajoute un objet à l'inventaire du personnage
+        """
+        from init_db import get_db_connection
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Déterminer le type_id basé sur le type d'objet
+        type_mapping = {
+            "healing": 1,  # Potion
+            "weapon": 3,   # Arme
+            "armor": 5,    # Armure
+        }
+        
+        type_id = type_mapping.get(item.type, 1)
+        
+        # Vérifier si l'objet existe déjà dans l'inventaire
+        cursor.execute('''
+            SELECT * FROM inventory 
+            WHERE character_id = ? AND name = ? AND type_id = ?
+        ''', (self.hero.id, item.name, type_id))
+        
+        existing_item = cursor.fetchone()
+        
+        if existing_item:
+            # Mettre à jour la quantité
+            cursor.execute('''
+                UPDATE inventory 
+                SET quantity = quantity + 1 
+                WHERE id = ?
+            ''', (existing_item['id'],))
+        else:
+            # Ajouter un nouvel objet
+            cursor.execute('''
+                INSERT INTO inventory (character_id, name, type_id, quantity) 
+                VALUES (?, ?, ?, ?)
+            ''', (self.hero.id, item.name, type_id, 1))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
 
     def battle(self, monster):
         """
-        Simulate a battle between the hero and a monster
+        Simule un combat entre le héros et un monstre
         """
-        output = f"Battle between {self.hero.name} and {monster.name}\n"
+        output = f"Combat entre {self.hero.name} et {monster.name}\n"
 
-        # Simple battle mechanics without defense
+        # Stocker la santé originale du héros pour la restaurer plus tard
+        original_hero_health = self.hero.health
+        monster_health = monster.health  # C'est une copie locale, donc c'est ok de la modifier
+
+        # Mécaniques de combat simples
         hero_damage = self.hero.attack
         monster_damage = monster.attack
 
-        # Round-based battle
-        while self.hero.health > 0 and monster.health > 0:
-            # Hero attacks monster
-            monster.health -= hero_damage
-            output += f"{self.hero.name} deals {hero_damage} damage to {monster.name}\n"
+        # Combat par tour
+        while self.hero.health > 0 and monster_health > 0:
+            # Le héros attaque le monstre
+            monster_health -= hero_damage
+            output += f"{self.hero.name} inflige {hero_damage} points de dégâts à {monster.name}\n"
 
-            if monster.health <= 0:
-                output += f"{monster.name} is defeated!\n"
+            if monster_health <= 0:
+                output += f"{monster.name} est vaincu !\n"
                 break
 
-            # Monster attacks hero
+            # Le monstre attaque le héros
             self.hero.health -= monster_damage
-            output += f"{monster.name} deals {monster_damage} damage to {self.hero.name}\n"
+            output += f"{monster.name} inflige {monster_damage} points de dégâts à {self.hero.name}\n"
 
             if self.hero.health <= 0:
-                output += f"{self.hero.name} is defeated!\n"
+                output += f"{self.hero.name} est vaincu !\n"
                 break
 
+        # Mettre à jour la santé du héros dans la base de données si le héros survit
+        if self.hero.health > 0:
+            self._update_hero_health()
+        else:
+            # Si le héros meurt, mettre à jour le statut de game over
+            self.is_game_over = True
+            # Aussi mettre à jour la santé dans la BD
+            self._update_hero_health()
+
         return output
+    
+    def _update_hero_health(self):
+        """
+        Met à jour la santé du héros dans la base de données
+        """
+        from init_db import get_db_connection
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE characters 
+            SET health = ? 
+            WHERE id = ?
+        ''', (self.hero.health, self.hero.id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()

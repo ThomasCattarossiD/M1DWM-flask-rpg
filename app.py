@@ -1,134 +1,133 @@
 import os
-import logging
-from logging.handlers import RotatingFileHandler
-from flask import Flask, jsonify, request, redirect, url_for
-from flask_cors import CORS
+from flask import Flask, jsonify, request
 from flask_bcrypt import Bcrypt
-from flask_login import LoginManager, current_user
-from datetime import datetime, timedelta
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required
+
 from init_db import get_db_connection, init_db
 from models.user import User
-
-# Routes
 from routes.auth_routes import auth_bp
+from routes.character_routes import character_bp
 from routes.game_routes import game_bp
 from routes.inventory_routes import inventory_bp
-from routes.api_routes import api_bp
-from routes.inv_routes import inv_bp
 
-# Configuration du logging
-def setup_logging(app):
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
-    file_handler = RotatingFileHandler('logs/flask_app.log', maxBytes=10240, backupCount=10)
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-    ))
-    file_handler.setLevel(logging.INFO)
-    app.logger.addHandler(file_handler)
-    app.logger.setLevel(logging.INFO)
-    app.logger.info('Application startup')
+# Charger les variables d'environnement
+from dotenv import load_dotenv
+load_dotenv()
 
-# Création et configuration de l'application
-# Dans app.py, ajoute ces configurations
-def create_app():
-    app = Flask(__name__)
-    app.config.from_object('config.Config')
-    
-    # Configuration supplémentaire pour les sessions
-    app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Requis pour les requêtes cross-origin
-    app.config['SESSION_COOKIE_SECURE'] = True  # Recommandé pour la sécurité
-    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Session plus longue
-    
-    # Configuration CORS mise à jour
-    CORS(app, 
-         resources={
-             r"/*": {
-                 "origins": ["http://localhost:4200", "http://localhost:3000", "http://127.0.0.1:4200"],
-                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                 "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-                 "supports_credentials": True,
-                 "expose_headers": ["Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"]
-             }
-         })
-    
-    # Hook pour les entêtes CORS
-    @app.after_request
-    def after_request(response):
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        
-        # Important: Corriger l'entête Access-Control-Allow-Origin pour les credentials
-        # Ne pas utiliser '*' avec credentials, spécifier l'origine exacte
-        origin = request.headers.get('Origin')
-        if origin in ["http://localhost:4200", "http://localhost:3000", "http://127.0.0.1:4200"]:
-            response.headers.set('Access-Control-Allow-Origin', origin)
-        
-        return response
-    
-    # Initialisation des extensions
-    bcrypt = Bcrypt(app)
-    login_manager = LoginManager()
-    login_manager.init_app(app)
-    login_manager.login_view = 'auth.login'
-    
-    # Personnaliser le gestionnaire d'unauthorised pour l'API
-    @login_manager.unauthorized_handler
-    def unauthorized_handler():
-        return jsonify({
-            "success": False,
-            "message": "Authentification requise"
-        }), 401
-       
-    # Configuration des blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(game_bp, url_prefix='/game')
-    app.register_blueprint(inventory_bp, url_prefix='/inventory')
-    app.register_blueprint(api_bp, url_prefix='/api')
-    app.register_blueprint(inv_bp, url_prefix='/inv')
-    
-    # Initialisation de la base de données
-    with app.app_context():
-        init_db()
-    
-    # Configuration du gestionnaire d'utilisateur
-    @login_manager.user_loader
-    def load_user(user_id):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM user WHERE user_id = ?', (user_id,))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        if user:
-            return User(
-                user['user_id'], 
-                user['user_login'], 
-                user['user_mail'],
-                user['active_character_id']
-            )
-        return None
-    
-    # Route de base pour vérifier que l'API fonctionne
-    @app.route('/api/health')
-    def health_check():
-        return jsonify({"status": "ok", "message": "API is running"}), 200
-    
-    # Gestionnaire d'erreur global pour les erreurs 404
-    @app.errorhandler(404)
-    def not_found(error):
-        return jsonify({"error": "Resource not found", "status": 404}), 404
-    
-    # Gestionnaire d'erreur global pour les erreurs 500
-    @app.errorhandler(500)
-    def server_error(error):
-        app.logger.error(f"Server error: {str(error)}")
-        return jsonify({"error": "Internal server error", "status": 500}), 500
-    
-    setup_logging(app)
-    return app
+# Initialiser l'application Flask
+app = Flask(__name__)
 
-# Point d'entrée de l'application
+# Configuration
+app.config["JWT_SECRET_KEY"] = os.getenv('SECRET_KEY', 'default-secret-key-for-jwt')
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 604800  
+app.config["CORS_HEADERS"] = "Content-Type"
+app.config["JSON_SORT_KEYS"] = False  # Préserver l'ordre des clés dans les réponses JSON
+app.config["JWT_COOKIE_SECURE"] = False  # Mettre à True en production avec HTTPS
+app.config["JWT_COOKIE_SAMESITE"] = "Lax"  # Permet la persistance lors de la navigation
+app.config["JWT_TOKEN_LOCATION"] = ["headers", "cookies"]  # Accepter le token dans les en-têtes ou les cookies
+
+# Initialiser les extensions
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+
+# Enregistrer les blueprints
+app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
+app.register_blueprint(character_bp, url_prefix='/api/v1/characters')
+app.register_blueprint(game_bp, url_prefix='/api/v1/game')
+app.register_blueprint(inventory_bp, url_prefix='/api/v1/inventory')
+
+# Route par défaut
+@app.route('/api/v1/')
+def home():
+    return jsonify({
+        "message": "Bienvenue sur l'API du RPG",
+        "version": "1.0.0",
+        "status": "online",
+        "docs": "/api/v1/docs"
+    })
+
+# Documentation simplifiée de l'API
+@app.route('/api/v1/docs/')
+def api_docs():
+    endpoints = [
+        {"path": "/api/v1/auth/register/", "method": "POST", "description": "Inscription d'un nouvel utilisateur"},
+        {"path": "/api/v1/auth/login/", "method": "POST", "description": "Connexion et obtention du token JWT"},
+        {"path": "/api/v1/auth/user/", "method": "GET", "description": "Obtenir les informations de l'utilisateur connecté"},
+        {"path": "/api/v1/characters/", "method": "GET", "description": "Liste des personnages de l'utilisateur"},
+        {"path": "/api/v1/characters/", "method": "POST", "description": "Création d'un nouveau personnage"},
+        {"path": "/api/v1/characters/{id}/", "method": "GET", "description": "Détails d'un personnage"},
+        {"path": "/api/v1/characters/{id}/select/", "method": "POST", "description": "Sélectionner un personnage actif"},
+        {"path": "/api/v1/inventory/", "method": "GET", "description": "Liste des objets du personnage actif"},
+        {"path": "/api/v1/inventory/", "method": "POST", "description": "Ajouter un nouvel objet"},
+        {"path": "/api/v1/inventory/{id}/", "method": "GET", "description": "Détails d'un objet"},
+        {"path": "/api/v1/inventory/{id}/", "method": "PUT", "description": "Modifier un objet"},
+        {"path": "/api/v1/inventory/{id}/", "method": "DELETE", "description": "Supprimer un objet"},
+        {"path": "/api/v1/inventory/{id}/consume/", "method": "POST", "description": "Consommer un objet"},
+        {"path": "/api/v1/inventory/types/", "method": "GET", "description": "Liste des types d'objets"},
+        {"path": "/api/v1/game/versus/", "method": "GET", "description": "Mode Versus - Liste des personnages disponibles"},
+        {"path": "/api/v1/game/versus/fight/", "method": "POST", "description": "Mode Versus - Simuler un combat"},
+        {"path": "/api/v1/game/quests/", "method": "GET", "description": "Mode Quête - Liste des quêtes disponibles"},
+        {"path": "/api/v1/game/quests/{id}/", "method": "POST", "description": "Mode Quête - Démarrer une quête"},
+        {"path": "/api/v1/game/board/", "method": "GET", "description": "Mode Plateau - Initialiser un nouveau jeu"},
+        {"path": "/api/v1/game/board/{session_id}/play/", "method": "POST", "description": "Mode Plateau - Jouer un tour"},
+        {"path": "/api/v1/game/board/{session_id}/", "method": "GET", "description": "Mode Plateau - Statut d'une session"},
+    ]
+    
+    return jsonify({
+        "title": "API RPG Documentation",
+        "version": "1.0.0",
+        "base_url": "/api/v1",
+        "auth": "JWT (Bearer Token)",
+        "endpoints": endpoints
+    })
+
+# Gestion globale des erreurs
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Resource not found"}), 404
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({"error": "Internal server error"}), 500
+
+# Fonction pour obtenir l'utilisateur courant
+def get_current_user():
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM user WHERE user_id = ?', (user_id,))
+    user_data = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if user_data:
+        return User(
+            user_data['user_id'], 
+            user_data['user_login'], 
+            user_data['user_mail'],
+            user_data['active_character_id']
+        )
+    return None
+
+# Exporter cette fonction pour les autres modules
+app.get_current_user = get_current_user
+
+# Initialisation de la base de données
+with app.app_context():
+    init_db()
+    print("Base de données initialisée")
+    
 if __name__ == '__main__':
-    app = create_app()
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    
+    print(f"Starting RPG API server on port {port}...")
+    if debug:
+        print("Running in DEBUG mode")
+    else:
+        print("Running in PRODUCTION mode")
+    
+    app.run(host='0.0.0.0', port=port, debug=debug)
