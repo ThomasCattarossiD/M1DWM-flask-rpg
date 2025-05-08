@@ -219,3 +219,49 @@ def select_character(character_id):
     conn.close()
     
     return jsonify({"message": "Personnage sélectionné avec succès"}), 200
+
+@character_bp.route('/<int:character_id>/', methods=['DELETE'])
+@jwt_required()
+def delete_character(character_id):
+    user_id = get_jwt_identity()
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Vérifier que le personnage appartient bien à l'utilisateur
+    cursor.execute('''
+        SELECT * FROM characters 
+        WHERE id = ? AND user_id = ?
+    ''', (character_id, user_id))
+
+    if not cursor.fetchone():
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Personnage non trouvé ou non autorisé"}), 404
+    
+    cursor.execute('''
+        SELECT * FROM characters 
+        JOIN user ON characters.user_id = user.active_character_id
+        WHERE characters.id = ?
+    ''', (character_id,))
+
+    if cursor.fetchone():
+        cursor.execute('''
+            UPDATE user 
+            SET active_character_id = NULL 
+            WHERE user_id = ?
+        ''', (user_id,))
+    
+    
+    # Supprimer le personnage
+    cursor.execute('''
+        DELETE FROM characters 
+        WHERE id = ? AND user_id = ?
+    ''', (character_id, user_id))
+    
+    conn.commit()
+    
+    cursor.close()
+    conn.close()
+    
+    return jsonify({"message": "Personnage supprimé avec succès"}), 200
